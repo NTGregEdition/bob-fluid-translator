@@ -21,7 +21,7 @@ buildscript {
 
 apply plugin: 'forge'
 
-version = "2.1.1"
+version = "2.1.2-NTGE"
 group= "com.ezzo.bobfluidtranslator" // http://maven.apache.org/guides/mini/guide-naming-conventions.html
 archivesBaseName = "bobfluidtranslator"
 
