@@ -27,6 +27,8 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private static final String BASE_PROVIDER = "api/hbm/fluidmk2/IFluidProviderMK2";
     private static final String PROXY_BASE = "com/hbm/tileentity/TileEntityProxyBase";
 
+ private static final String LEGACY_TRANSCEIVER = "api/hbm/fluid/IFluidStandardTransceiver";
+
     private static final String FLUID_HANDLER = "net/minecraftforge/fluids/IFluidHandler";
     private static final String BRIDGE = "com/ezzo/fluidtranslator/asm/UniversalFluidBridge";
 
@@ -52,6 +54,9 @@ public class UniversalFluidTransformer implements IClassTransformer {
             if (transformedName.equals("api.hbm.fluidmk2.IFluidStandardTransceiverMK2")) {
                 return patchTransceiver(basicClass);
             }
+            if (transformedName.equals("api.hbm.fluid.IFluidStandardTransceiver")) {
+                return patchLegacyTransceiver(basicClass);
+            }
             if (transformedName.equals("api.hbm.fluidmk2.IFluidReceiverMK2")) {
                 return patchBaseReceiver(basicClass);
             }
@@ -60,6 +65,10 @@ public class UniversalFluidTransformer implements IClassTransformer {
             }
             if (transformedName.equals("com.hbm.tileentity.TileEntityProxyBase")) {
                 return patchProxyBase(basicClass);
+            }
+
+            if (transformedName.startsWith("com.hbm.tileentity.")) {
+                return patchDiamondConflict(basicClass, transformedName);
             }
         } catch (Throwable t) {
             LOG.log(Level.SEVERE, "Failed to patch " + transformedName + " for universal fluid ports", t);
@@ -206,6 +215,34 @@ public class UniversalFluidTransformer implements IClassTransformer {
     }
 
     // ------------------------------------------------------------------
+    // api.hbm.fluid.IFluidStandardTransceiver (deprecated legacy interface)
+    // ------------------------------------------------------------------
+
+    private byte[] patchLegacyTransceiver(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+        if (cn.interfaces.contains(FLUID_HANDLER)) return basicClass; // already patched
+
+        addInterface(cn, FLUID_HANDLER);
+
+        String self = "L" + LEGACY_TRANSCEIVER + ";";
+        addTrampoline(cn, "fill", "(" + DIR + STACK + "Z)I",
+                "legacyTransceiverFill", "(" + self + DIR + STACK + "Z)I");
+        addTrampoline(cn, "drain", "(" + DIR + STACK + "Z)" + STACK,
+                "legacyTransceiverDrain", "(" + self + DIR + STACK + "Z)" + STACK);
+        addTrampoline(cn, "drain", "(" + DIR + "IZ)" + STACK,
+                "legacyTransceiverDrainAmount", "(" + self + DIR + "IZ)" + STACK);
+        addTrampoline(cn, "canFill", "(" + DIR + FLUID + ")Z",
+                "legacyTransceiverCanFill", "(" + self + DIR + FLUID + ")Z");
+        addTrampoline(cn, "canDrain", "(" + DIR + FLUID + ")Z",
+                "legacyTransceiverCanDrain", "(" + self + DIR + FLUID + ")Z");
+        addTrampoline(cn, "getTankInfo", "(" + DIR + ")" + TANKINFO_ARR,
+                "legacyTransceiverTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
+
+        LOG.info("Patched " + LEGACY_TRANSCEIVER + " with a universal Forge IFluidHandler bridge");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
     // IFluidReceiverMK2 / IFluidProviderMK2 (base interfaces)
     // ------------------------------------------------------------------
 
@@ -282,6 +319,56 @@ public class UniversalFluidTransformer implements IClassTransformer {
                 "proxyTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
 
         LOG.info("Patched " + PROXY_BASE + " with a universal Forge IFluidHandler bridge (delegates to the real core)");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // Diamond conflict
+    // ------------------------------------------------------------------
+
+    private byte[] patchDiamondConflict(byte[] basicClass, String transformedName) {
+        ClassNode cn = readClass(basicClass);
+
+        boolean standardReceiver = cn.interfaces.contains(RECEIVER);
+        boolean standardSender = cn.interfaces.contains(SENDER);
+        boolean baseReceiver = cn.interfaces.contains(BASE_RECEIVER);
+        boolean baseProvider = cn.interfaces.contains(BASE_PROVIDER);
+
+        boolean isReceiver = standardReceiver || baseReceiver;
+        boolean isSender = standardSender || baseProvider;
+
+        if (!isReceiver || !isSender) return basicClass;
+        if (cn.interfaces.contains(FLUID_HANDLER)) return basicClass; // already resolved somehow
+
+        addInterface(cn, FLUID_HANDLER);
+
+        String receiverType = standardReceiver ? RECEIVER : BASE_RECEIVER;
+        String senderType = standardSender ? SENDER : BASE_PROVIDER;
+        String receiverSelf = "L" + receiverType + ";";
+        String senderSelf = "L" + senderType + ";";
+
+        String fillMethod = standardReceiver ? "receiverFill" : "baseReceiverFill";
+        String canFillMethod = standardReceiver ? "receiverCanFill" : "baseReceiverCanFill";
+        String drainMethod = standardSender ? "senderDrain" : "baseProviderDrain";
+        String drainAmountMethod = standardSender ? "senderDrainAmount" : "baseProviderDrainAmount";
+        String canDrainMethod = standardSender ? "senderCanDrain" : "baseProviderCanDrain";
+
+        addTrampoline(cn, "fill", "(" + DIR + STACK + "Z)I",
+                fillMethod, "(" + receiverSelf + DIR + STACK + "Z)I");
+        addTrampoline(cn, "drain", "(" + DIR + STACK + "Z)" + STACK,
+                drainMethod, "(" + senderSelf + DIR + STACK + "Z)" + STACK);
+        addTrampoline(cn, "drain", "(" + DIR + "IZ)" + STACK,
+                drainAmountMethod, "(" + senderSelf + DIR + "IZ)" + STACK);
+        addTrampoline(cn, "canFill", "(" + DIR + FLUID + ")Z",
+                canFillMethod, "(" + receiverSelf + DIR + FLUID + ")Z");
+        addTrampoline(cn, "canDrain", "(" + DIR + FLUID + ")Z",
+                canDrainMethod, "(" + senderSelf + DIR + FLUID + ")Z");
+        String baseReceiverSelf = "L" + BASE_RECEIVER + ";";
+        addTrampoline(cn, "getTankInfo", "(" + DIR + ")" + TANKINFO_ARR,
+                "combinedTankInfo", "(" + baseReceiverSelf + DIR + ")" + TANKINFO_ARR);
+
+        LOG.info("Patched " + transformedName + " directly (implements a receiver-family and "
+                + "sender-family MK2 interface at once, needed its own diamond-resolving overrides)");
         return writeClass(cn);
     }
 

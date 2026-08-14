@@ -1,5 +1,6 @@
 package com.ezzo.fluidtranslator.asm;
 
+import api.hbm.fluid.IFluidStandardTransceiver;
 import api.hbm.fluidmk2.IFluidProviderMK2;
 import api.hbm.fluidmk2.IFluidReceiverMK2;
 import api.hbm.fluidmk2.IFluidStandardReceiverMK2;
@@ -186,6 +187,90 @@ public final class UniversalFluidBridge {
             return tankInfo(self.getAllTanks());
         } catch (Throwable t) {
             logError("transceiverTankInfo", self, t);
+            return emptyInfo();
+        }
+    }
+
+    // ======================================================================
+    // api.hbm.fluid.IFluidStandardTransceiver (deprecated legacy interface)
+    // ======================================================================
+
+    @SuppressWarnings("deprecation")
+    public static int legacyTransceiverFill(IFluidStandardTransceiver self, ForgeDirection from, FluidStack resource, boolean doFill) {
+        if (!ModConfig.enableUniversalFluidPorts) return 0;
+        try {
+            return fillTanks(self.getReceivingTanks(), resource, doFill);
+        } catch (Throwable t) {
+            logError("legacyTransceiverFill", self, t);
+            return 0;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static FluidStack legacyTransceiverDrain(IFluidStandardTransceiver self, ForgeDirection from, FluidStack resource, boolean doDrain) {
+        if (!ModConfig.enableUniversalFluidPorts) return null;
+        try {
+            return drainTanksByType(self.getSendingTanks(), resource, doDrain);
+        } catch (Throwable t) {
+            logError("legacyTransceiverDrain", self, t);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static FluidStack legacyTransceiverDrainAmount(IFluidStandardTransceiver self, ForgeDirection from, int maxDrain, boolean doDrain) {
+        if (!ModConfig.enableUniversalFluidPorts) return null;
+        try {
+            return drainTanksAny(self.getSendingTanks(), maxDrain, doDrain);
+        } catch (Throwable t) {
+            logError("legacyTransceiverDrainAmount", self, t);
+            return null;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static boolean legacyTransceiverCanFill(IFluidStandardTransceiver self, ForgeDirection from, Fluid fluid) {
+        if (!ModConfig.enableUniversalFluidPorts) return false;
+        try {
+            return canFillTanks(self.getReceivingTanks(), fluid);
+        } catch (Throwable t) {
+            logError("legacyTransceiverCanFill", self, t);
+            return false;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static boolean legacyTransceiverCanDrain(IFluidStandardTransceiver self, ForgeDirection from, Fluid fluid) {
+        if (!ModConfig.enableUniversalFluidPorts) return false;
+        try {
+            return canDrainTanks(self.getSendingTanks(), fluid);
+        } catch (Throwable t) {
+            logError("legacyTransceiverCanDrain", self, t);
+            return false;
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    public static FluidTankInfo[] legacyTransceiverTankInfo(IFluidStandardTransceiver self, ForgeDirection from) {
+        if (!ModConfig.enableUniversalFluidPorts) return emptyInfo();
+        try {
+            return tankInfo(self.getAllTanks());
+        } catch (Throwable t) {
+            logError("legacyTransceiverTankInfo", self, t);
+            return emptyInfo();
+        }
+    }
+
+    // ======================================================================
+    // Diamond-conflict
+    // ======================================================================
+
+    public static FluidTankInfo[] combinedTankInfo(IFluidReceiverMK2 self, ForgeDirection from) {
+        if (!ModConfig.enableUniversalFluidPorts) return emptyInfo();
+        try {
+            return tankInfo(self.getAllTanks());
+        } catch (Throwable t) {
+            logError("combinedTankInfo", self, t);
             return emptyInfo();
         }
     }
