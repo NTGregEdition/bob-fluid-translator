@@ -524,7 +524,6 @@ public final class UniversalFluidBridge {
 
                 if (doDrain) {
                     tank.setFill(tank.getFill() - drained);
-                    if (tank.getFill() <= 0) tank.setTankType(Fluids.NONE);
                 }
 
                 return new FluidStack(forgeFluid, drained);
@@ -547,7 +546,6 @@ public final class UniversalFluidBridge {
 
             if (doDrain) {
                 tank.setFill(tank.getFill() - drained);
-                if (tank.getFill() <= 0) tank.setTankType(Fluids.NONE);
             }
 
             return new FluidStack(forgeFluid, drained);
