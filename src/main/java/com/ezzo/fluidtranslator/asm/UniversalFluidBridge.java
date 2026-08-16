@@ -1,6 +1,8 @@
 package com.ezzo.fluidtranslator.asm;
 
 import api.hbm.fluid.IFluidStandardTransceiver;
+import api.hbm.fluidmk2.FluidNetMK2;
+import api.hbm.fluidmk2.IFluidConnectorMK2;
 import api.hbm.fluidmk2.IFluidProviderMK2;
 import api.hbm.fluidmk2.IFluidReceiverMK2;
 import api.hbm.fluidmk2.IFluidStandardReceiverMK2;
@@ -13,7 +15,11 @@ import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
 import com.hbm.inventory.fluid.tank.FluidTank;
 import com.hbm.tileentity.TileEntityProxyBase;
+import com.hbm.tileentity.network.TileEntityPipeBaseNT;
+import com.hbm.uninos.GenNode;
+import com.hbm.uninos.UniNodespace;
 import net.minecraft.tileentity.TileEntity;
+import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.Fluid;
@@ -23,6 +29,8 @@ import net.minecraftforge.fluids.IFluidHandler;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.WeakHashMap;
 
 public final class UniversalFluidBridge {
 
@@ -513,7 +521,7 @@ public final class UniversalFluidBridge {
     // ======================================================================
 
     public static void tryProvideToForge(IFluidStandardSenderMK2 self, FluidType type, int pressure,
-                                          World world, int x, int y, int z, ForgeDirection dir) {
+                                         World world, int x, int y, int z, ForgeDirection dir) {
         if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enableAutoPushToForge) return;
         if (world == null || type == null || type.getID() == Fluids.NONE.getID()) return;
 
@@ -524,7 +532,11 @@ public final class UniversalFluidBridge {
             // If the neighbour is already a native HBM receiver, the untouched
             // original tryProvide() call already handled it - don't double dip.
             if (te instanceof api.hbm.fluidmk2.IFluidReceiverMK2) return;
-            if (!(te instanceof IFluidHandler)) return;
+
+            ForgeDirection sideOnNeighbor = dir.getOpposite();
+            Object resolved = AE2PartHostCompat.resolveFluidHandler(te, sideOnNeighbor);
+            if (!(resolved instanceof IFluidHandler)) return;
+            IFluidHandler handler = (IFluidHandler) resolved;
 
             Fluid forgeFluid = ModFluidRegistry.getForgeFluid(type);
             if (forgeFluid == null) return; // fluid has no Forge-side counterpart (blacklisted etc.)
@@ -533,8 +545,6 @@ public final class UniversalFluidBridge {
             if (available <= 0) return;
 
             int toOffer = (int) Math.min(available, Integer.MAX_VALUE);
-            IFluidHandler handler = (IFluidHandler) te;
-            ForgeDirection sideOnNeighbor = dir.getOpposite();
 
             if (!handler.canFill(sideOnNeighbor, forgeFluid)) return;
 
@@ -545,6 +555,141 @@ public final class UniversalFluidBridge {
         } catch (Throwable t) {
             FluidTranslator.logger.error("UniversalFluidBridge: error auto-pushing fluid into a foreign IFluidHandler at "
                     + x + "," + y + "," + z, t);
+        }
+    }
+
+    // ======================================================================
+    // Pipe -> foreign IFluidHandler auto-connect
+    // ======================================================================
+
+    private static final Map<TileEntityPipeBaseNT, ForeignFluidPort[]> PIPE_FOREIGN_PORTS =
+            new WeakHashMap<TileEntityPipeBaseNT, ForeignFluidPort[]>();
+
+    @SuppressWarnings("unchecked")
+    public static void pipeDiscoverForeignNeighbors(TileEntityPipeBaseNT self) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeForeignConnect) return;
+
+        boolean debug = ModConfig.debugPipeForeignConnect;
+        String posTag = null;
+
+        try {
+            World world = self.getWorldObj();
+            if (world == null || world.isRemote) return;
+
+            if (debug) {
+                posTag = self.xCoord + "," + self.yCoord + "," + self.zCoord;
+            }
+
+            FluidType type = self.getType();
+            if (type == null || type.getID() == Fluids.NONE.getID()) {
+                if (debug) {
+                    FluidTranslator.logger.info("PipeDebug " + posTag + ": no fluid type set on this pipe (Fluids.NONE) - "
+                            + "right-click it with a bucket of the fluid you want to route, or connect it to a "
+                            + "native NTM machine/tank first.");
+                }
+                return;
+            }
+
+            Fluid forgeFluid = ModFluidRegistry.getForgeFluid(type);
+            if (forgeFluid == null) {
+                if (debug) {
+                    FluidTranslator.logger.info("PipeDebug " + posTag + ": type=" + type.getName()
+                            + " has no Forge fluid mapping (blacklisted or unregistered) - nothing to bridge.");
+                }
+                return;
+            }
+
+            GenNode node = UniNodespace.getNode(world, self.xCoord, self.yCoord, self.zCoord, type.getNetworkProvider());
+            if (node == null || !node.hasValidNet()) {
+                if (debug) {
+                    FluidTranslator.logger.info("PipeDebug " + posTag + ": type=" + type.getName()
+                            + " has no established network node yet (node=" + node + ") - skipping this tick.");
+                }
+                return;
+            }
+            FluidNetMK2 net = (FluidNetMK2) node.net;
+
+            ForeignFluidPort[] ports = PIPE_FOREIGN_PORTS.get(self);
+            if (ports == null) {
+                ports = new ForeignFluidPort[6];
+                PIPE_FOREIGN_PORTS.put(self, ports);
+            }
+
+            int foundThisTick = 0;
+
+            for (ForgeDirection dir : ForgeDirection.VALID_DIRECTIONS) {
+                int idx = dir.ordinal();
+                int nx = self.xCoord + dir.offsetX;
+                int ny = self.yCoord + dir.offsetY;
+                int nz = self.zCoord + dir.offsetZ;
+                TileEntity te = world.getTileEntity(nx, ny, nz);
+
+                if (te == null || te == self || te instanceof IFluidConnectorMK2) {
+                    ports[idx] = null;
+                    continue;
+                }
+
+                if (AE2PartHostCompat.resolveFluidHandler(te, dir.getOpposite()) == null) {
+                    if (debug) {
+                        FluidTranslator.logger.info("PipeDebug " + posTag + " side=" + dir
+                                + ": neighbor " + te.getClass().getName()
+                                + " is not a bridgeable Forge IFluidHandler and has no fluid-handling "
+                                + "AE2 part on this face - skipped.");
+                    }
+                    ports[idx] = null;
+                    continue;
+                }
+
+                ForeignFluidPort port = ports[idx];
+                if (port == null || port.target != te) {
+                    port = new ForeignFluidPort(te, dir.getOpposite());
+                    ports[idx] = port;
+                }
+
+                net.addProvider(port);
+                net.addReceiver(port);
+                foundThisTick++;
+
+                if (debug) {
+                    FluidTranslator.logger.info("PipeDebug " + posTag + " side=" + dir
+                            + ": wired up foreign handler " + te.getClass().getName()
+                            + " at " + nx + "," + ny + "," + nz + " for type=" + type.getName());
+                }
+            }
+
+            if (debug && foundThisTick == 0) {
+                FluidTranslator.logger.info("PipeDebug " + posTag + ": network is valid (type=" + type.getName()
+                        + ") but no foreign IFluidHandler neighbors found on any of the 6 sides this tick.");
+            }
+        } catch (Throwable t) {
+            FluidTranslator.logger.error("UniversalFluidBridge: error discovering foreign fluid neighbors for the pipe at "
+                    + self.xCoord + "," + self.yCoord + "," + self.zCoord, t);
+        }
+    }
+
+    // ======================================================================
+    // Pipe -> foreign IFluidHandler visual connection (block bounds / collision / model)
+    // ======================================================================
+
+    public static boolean canConnectForeign(IBlockAccess world, int x, int y, int z, ForgeDirection dir, FluidType type) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeForeignConnect) return false;
+        if (world == null || type == null || type.getID() == Fluids.NONE.getID()) return false;
+
+        try {
+            TileEntity te = world.getTileEntity(x, y, z);
+            if (te == null) return false;
+
+            Fluid forgeFluid = ModFluidRegistry.getForgeFluid(type);
+            if (forgeFluid == null) return false;
+
+            ForgeDirection sideOnNeighbor = dir.getOpposite();
+            Object resolved = AE2PartHostCompat.resolveFluidHandler(te, sideOnNeighbor);
+            if (!(resolved instanceof IFluidHandler)) return false;
+
+            IFluidHandler handler = (IFluidHandler) resolved;
+            return handler.canFill(sideOnNeighbor, forgeFluid) || handler.canDrain(sideOnNeighbor, forgeFluid);
+        } catch (Throwable t) {
+            return false;
         }
     }
 

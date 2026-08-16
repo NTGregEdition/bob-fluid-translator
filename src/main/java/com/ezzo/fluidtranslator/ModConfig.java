@@ -31,6 +31,10 @@ public class ModConfig {
      */
     public static boolean enableAutoPushToForge;
 
+    public static boolean enablePipeForeignConnect;
+
+    public static boolean debugPipeForeignConnect;
+
     /**
      * Loads configs from file and sets their values in game.
      * Finally, saves the configs if they have changed.
@@ -87,6 +91,25 @@ public class ModConfig {
                         "neighboring plain-Forge fluid handler every tick, instead of only reacting when\n" +
                         "something else calls them. Disable this if fluid seems to leak somewhere unexpected;\n" +
                         "everything initiated from the Forge side keeps working regardless of this setting.\n"
+        );
+
+        ModConfig.enablePipeForeignConnect = config.getBoolean(
+                "enablePipeForeignConnect",
+                "universalPorts",
+                true,
+                "If true, NTM fluid pipes (ducts, valves, gauges, etc.) automatically look for plain-Forge\n" +
+                        "fluid handlers touching other mods' tanks, and so on -\n" +
+                        "and connect to them directly, exactly as if they were native NTM machines. This lets a\n" +
+                        "pipe run end at a foreign tank with no NTM machine or Adapter block at the boundary.\n" +
+                        "Requires enableUniversalFluidPorts to also be true.\n"
+        );
+
+        ModConfig.debugPipeForeignConnect = config.getBoolean(
+                "debugPipeForeignConnect",
+                "universalPorts",
+                false,
+                "TEMPORARY DIAGNOSTIC. If true, spams the log every tick explaining exactly why each pipe\n" +
+                        "did or didn't wire up to a foreign neighbor. Only turn on while debugging, then off again.\n"
         );
 
         if (config.hasChanged()) config.save();

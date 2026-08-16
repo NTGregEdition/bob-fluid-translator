@@ -26,8 +26,13 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private static final String BASE_RECEIVER = "api/hbm/fluidmk2/IFluidReceiverMK2";
     private static final String BASE_PROVIDER = "api/hbm/fluidmk2/IFluidProviderMK2";
     private static final String PROXY_BASE = "com/hbm/tileentity/TileEntityProxyBase";
+    private static final String PIPE_BASE = "com/hbm/tileentity/network/TileEntityPipeBaseNT";
+    private static final String LIBRARY = "com/hbm/lib/Library";
 
- private static final String LEGACY_TRANSCEIVER = "api/hbm/fluid/IFluidStandardTransceiver";
+    private static final String LEGACY_TRANSCEIVER = "api/hbm/fluid/IFluidStandardTransceiver";
+
+    private static final String TICK_DEOBF = "updateEntity";
+    private static final String TICK_SRG = "func_145845_h";
 
     private static final String FLUID_HANDLER = "net/minecraftforge/fluids/IFluidHandler";
     private static final String BRIDGE = "com/ezzo/fluidtranslator/asm/UniversalFluidBridge";
@@ -39,6 +44,9 @@ public class UniversalFluidTransformer implements IClassTransformer {
 
     private static final String TRY_PROVIDE_DESC =
             "(Lcom/hbm/inventory/fluid/FluidType;ILnet/minecraft/world/World;IIILnet/minecraftforge/common/util/ForgeDirection;)V";
+
+    private static final String CAN_CONNECT_FLUID_DESC =
+            "(Lnet/minecraft/world/IBlockAccess;III" + DIR + "Lcom/hbm/inventory/fluid/FluidType;)Z";
 
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
@@ -65,6 +73,12 @@ public class UniversalFluidTransformer implements IClassTransformer {
             }
             if (transformedName.equals("com.hbm.tileentity.TileEntityProxyBase")) {
                 return patchProxyBase(basicClass);
+            }
+            if (transformedName.equals("com.hbm.tileentity.network.TileEntityPipeBaseNT")) {
+                return patchPipeBase(basicClass);
+            }
+            if (transformedName.equals("com.hbm.lib.Library")) {
+                return patchLibrary(basicClass);
             }
 
             if (transformedName.startsWith("com.hbm.tileentity.")) {
@@ -319,6 +333,104 @@ public class UniversalFluidTransformer implements IClassTransformer {
                 "proxyTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
 
         LOG.info("Patched " + PROXY_BASE + " with a universal Forge IFluidHandler bridge (delegates to the real core)");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // TileEntityPipeBaseNT (pipes/ducts/valves/gauges - anything that routes fluid)
+    // ------------------------------------------------------------------
+
+    private byte[] patchPipeBase(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+
+        String tickName = TICK_DEOBF;
+        MethodNode original = findMethod(cn, tickName, "()V");
+        if (original == null) {
+            tickName = TICK_SRG;
+            original = findMethod(cn, tickName, "()V");
+        }
+
+        if (original == null) {
+            LOG.warning(PIPE_BASE + "#updateEntity()V not found under either the deobfuscated or SRG "
+                    + "name - the installed NTM version may not match what this coremod expects. "
+                    + "Skipping the pipe auto-connect patch (direct machine-to-Forge bridging still works).");
+            return basicClass;
+        }
+
+        String renamed = tickName + "$hbm";
+        if (findMethod(cn, renamed, "()V") != null) return basicClass; // already patched
+
+        original.name = renamed;
+
+        MethodNode wrapper = new MethodNode(Opcodes.ACC_PUBLIC, tickName, "()V", null, null);
+        InsnList il = new InsnList();
+
+        // this.<tickName>$hbm()
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, PIPE_BASE, renamed, "()V", false));
+
+        // UniversalFluidBridge.pipeDiscoverForeignNeighbors(this)
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "pipeDiscoverForeignNeighbors",
+                "(L" + PIPE_BASE + ";)V", false));
+
+        il.add(new InsnNode(Opcodes.RETURN));
+
+        wrapper.instructions = il;
+        cn.methods.add(wrapper);
+
+        LOG.info("Patched " + PIPE_BASE + "#" + tickName + " to also auto-discover foreign IFluidHandler neighbors");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // com.hbm.lib.Library#canConnectFluid
+    // ------------------------------------------------------------------
+
+    private byte[] patchLibrary(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+
+        MethodNode original = findMethod(cn, "canConnectFluid", CAN_CONNECT_FLUID_DESC);
+        if (original == null) {
+            LOG.warning(LIBRARY + "#canConnectFluid" + CAN_CONNECT_FLUID_DESC + " not found - the "
+                    + "installed NTM version may not match what this coremod expects. Skipping the "
+                    + "pipe visual-connection patch (fluid still flows to foreign handlers, they "
+                    + "just won't render as connected).");
+            return basicClass;
+        }
+
+        String renamed = "canConnectFluid$hbm";
+        if (findMethod(cn, renamed, CAN_CONNECT_FLUID_DESC) != null) return basicClass; // already patched
+
+        original.name = renamed;
+
+        MethodNode wrapper = new MethodNode(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC,
+                "canConnectFluid", CAN_CONNECT_FLUID_DESC, null, null);
+        InsnList il = new InsnList();
+
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new VarInsnNode(Opcodes.ILOAD, 1));
+        il.add(new VarInsnNode(Opcodes.ILOAD, 2));
+        il.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        il.add(new VarInsnNode(Opcodes.ALOAD, 4));
+        il.add(new VarInsnNode(Opcodes.ALOAD, 5));
+        il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, LIBRARY, renamed, CAN_CONNECT_FLUID_DESC, false));
+
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new VarInsnNode(Opcodes.ILOAD, 1));
+        il.add(new VarInsnNode(Opcodes.ILOAD, 2));
+        il.add(new VarInsnNode(Opcodes.ILOAD, 3));
+        il.add(new VarInsnNode(Opcodes.ALOAD, 4));
+        il.add(new VarInsnNode(Opcodes.ALOAD, 5));
+        il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "canConnectForeign", CAN_CONNECT_FLUID_DESC, false));
+
+        il.add(new InsnNode(Opcodes.IOR));
+        il.add(new InsnNode(Opcodes.IRETURN));
+
+        wrapper.instructions = il;
+        cn.methods.add(wrapper);
+
+        LOG.info("Patched " + LIBRARY + "#canConnectFluid to also visually connect to foreign IFluidHandler neighbors");
         return writeClass(cn);
     }
 
