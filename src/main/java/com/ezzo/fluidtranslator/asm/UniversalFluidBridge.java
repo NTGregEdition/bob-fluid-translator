@@ -668,6 +668,219 @@ public final class UniversalFluidBridge {
     }
 
     // ======================================================================
+    // Pipe's OWN external Forge fluid port (lets an ACTIVE foreign component
+    // like an AE2FluidCraft-Rework fluid import/export bus fill/drain a bare
+    // duct directly, instead of only the duct being able to discover a
+    // passive foreign tank on its own via pipeDiscoverForeignNeighbors above)
+    //
+    // Deliberately buffer-free: a duct isn't a tank, so nothing is stored on
+    // it between calls. fill()/drain() reach straight into the duct's own
+    // live FluidNetMK2 and transfer directly against whatever's actually
+    // registered there right now (real machines/tanks, or other foreign
+    // neighbors already bridged via ForeignFluidPort above). Throughput is
+    // bounded only by their real demand/supply, not by any capacity of our
+    // own, so a duct behaves the same as any other point on the network
+    // instead of quietly throttling everything that passes through it.
+    // ======================================================================
+
+    private static FluidNetMK2 liveNetwork(TileEntityPipeBaseNT self, FluidType type) {
+        if (type == null || type.getID() == Fluids.NONE.getID()) return null;
+        World world = self.getWorldObj();
+        if (world == null) return null;
+
+        GenNode node = UniNodespace.getNode(world, self.xCoord, self.yCoord, self.zCoord, type.getNetworkProvider());
+        if (node == null || !node.hasValidNet()) return null;
+
+        return (FluidNetMK2) node.net;
+    }
+
+    /** Pushes {@code amount} of {@code type} straight at the network's real receivers, right now. */
+    private static long relayToReceivers(FluidNetMK2 net, FluidType type, long amount, boolean doTransfer) {
+        if (amount <= 0 || net.receiverEntries.isEmpty()) return 0;
+
+        if (!doTransfer) {
+            long demand = 0;
+            for (IFluidReceiverMK2 receiver : net.receiverEntries.keySet()) {
+                demand += Math.max(0, receiver.getDemand(type, 0));
+                if (demand >= amount) return amount;
+            }
+            return Math.min(amount, demand);
+        }
+
+        long remaining = amount;
+        for (IFluidReceiverMK2 receiver : net.receiverEntries.keySet()) {
+            if (remaining <= 0) break;
+            remaining = receiver.transferFluid(type, 0, remaining); // leftover not accepted, per the MK2 contract
+        }
+        return amount - remaining;
+    }
+
+    /** Pulls up to {@code amount} of {@code type} straight from the network's real providers, right now. */
+    private static long relayFromProviders(FluidNetMK2 net, FluidType type, long amount, boolean doTransfer) {
+        if (amount <= 0 || net.providerEntries.isEmpty()) return 0;
+
+        if (!doTransfer) {
+            long available = 0;
+            for (IFluidProviderMK2 provider : net.providerEntries.keySet()) {
+                available += Math.max(0, provider.getFluidAvailable(type, 0));
+                if (available >= amount) return amount;
+            }
+            return Math.min(amount, available);
+        }
+
+        long remaining = amount;
+        for (IFluidProviderMK2 provider : net.providerEntries.keySet()) {
+            if (remaining <= 0) break;
+            long take = Math.min(remaining, Math.max(0, provider.getFluidAvailable(type, 0)));
+            if (take <= 0) continue;
+            provider.useUpFluid(type, 0, take);
+            remaining -= take;
+        }
+        return amount - remaining;
+    }
+
+    public static int pipeFill(TileEntityPipeBaseNT self, ForgeDirection from, FluidStack resource, boolean doFill) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return 0;
+        try {
+            if (resource == null || resource.getFluid() == null || resource.amount <= 0) return 0;
+
+            FluidType incoming = ModFluidRegistry.getHBMFluid(resource.getFluid());
+            if (incoming == null || incoming.getID() == Fluids.NONE.getID()) return 0;
+
+            FluidType pipeType = self.getType();
+            boolean priming = pipeType == null || pipeType.getID() == Fluids.NONE.getID();
+            if (!priming && pipeType.getID() != incoming.getID()) return 0; // wrong fluid for this duct
+
+            FluidNetMK2 net = liveNetwork(self, priming ? incoming : pipeType);
+            if (net == null) {
+                // No established network to relay into yet - most likely a fresh, untyped
+                // duct being touched for the very first time. Prime its type so the pipe's
+                // own tick joins a network next tick, but there's nowhere to put fluid yet.
+                if (doFill && priming) self.setType(incoming);
+                return 0;
+            }
+
+            long accepted = relayToReceivers(net, incoming, resource.amount, doFill);
+            if (accepted > 0 && doFill && priming) self.setType(incoming);
+            return (int) accepted;
+        } catch (Throwable t) {
+            logError("pipeFill", self, t);
+            return 0;
+        }
+    }
+
+    public static FluidStack pipeDrain(TileEntityPipeBaseNT self, ForgeDirection from, FluidStack resource, boolean doDrain) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return null;
+        try {
+            if (resource == null || resource.getFluid() == null) return null;
+
+            FluidType pipeType = self.getType();
+            if (pipeType == null || pipeType.getID() == Fluids.NONE.getID()) return null; // nothing flowing through yet
+
+            FluidType requested = ModFluidRegistry.getHBMFluid(resource.getFluid());
+            if (requested == null || requested.getID() != pipeType.getID()) return null;
+
+            return drainInternal(self, pipeType, resource.amount, doDrain);
+        } catch (Throwable t) {
+            logError("pipeDrain", self, t);
+            return null;
+        }
+    }
+
+    public static FluidStack pipeDrainAmount(TileEntityPipeBaseNT self, ForgeDirection from, int maxDrain, boolean doDrain) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return null;
+        try {
+            if (maxDrain <= 0) return null;
+
+            FluidType pipeType = self.getType();
+            if (pipeType == null || pipeType.getID() == Fluids.NONE.getID()) return null;
+
+            return drainInternal(self, pipeType, maxDrain, doDrain);
+        } catch (Throwable t) {
+            logError("pipeDrainAmount", self, t);
+            return null;
+        }
+    }
+
+    private static FluidStack drainInternal(TileEntityPipeBaseNT self, FluidType pipeType, int maxDrain, boolean doDrain) {
+        FluidNetMK2 net = liveNetwork(self, pipeType);
+        if (net == null) return null;
+
+        long drained = relayFromProviders(net, pipeType, maxDrain, doDrain);
+        if (drained <= 0) return null;
+
+        Fluid forgeFluid = ModFluidRegistry.getForgeFluid(pipeType);
+        if (forgeFluid == null) return null;
+
+        return new FluidStack(forgeFluid, (int) drained);
+    }
+
+    public static boolean pipeCanFill(TileEntityPipeBaseNT self, ForgeDirection from, Fluid fluid) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return false;
+        try {
+            FluidType incoming = ModFluidRegistry.getHBMFluid(fluid);
+            if (incoming == null || incoming.getID() == Fluids.NONE.getID()) return false;
+
+            FluidType pipeType = self.getType();
+            return pipeType == null || pipeType.getID() == Fluids.NONE.getID() || pipeType.getID() == incoming.getID();
+        } catch (Throwable t) {
+            logError("pipeCanFill", self, t);
+            return false;
+        }
+    }
+
+    public static boolean pipeCanDrain(TileEntityPipeBaseNT self, ForgeDirection from, Fluid fluid) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return false;
+        try {
+            FluidType pipeType = self.getType();
+            if (pipeType == null || pipeType.getID() == Fluids.NONE.getID()) return false;
+            if (fluid == null) return true;
+
+            FluidType requested = ModFluidRegistry.getHBMFluid(fluid);
+            return requested != null && requested.getID() == pipeType.getID();
+        } catch (Throwable t) {
+            logError("pipeCanDrain", self, t);
+            return false;
+        }
+    }
+
+    public static FluidTankInfo[] pipeTankInfo(TileEntityPipeBaseNT self, ForgeDirection from) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return emptyInfo();
+        try {
+            FluidType pipeType = self.getType();
+            if (pipeType == null || pipeType.getID() == Fluids.NONE.getID()) {
+                return new FluidTankInfo[]{new FluidTankInfo((FluidStack) null, Integer.MAX_VALUE)};
+            }
+
+            Fluid forgeFluid = ModFluidRegistry.getForgeFluid(pipeType);
+            if (forgeFluid == null) return emptyInfo();
+
+            // A duct has no capacity/buffer of its own, so Integer.MAX_VALUE is reported
+            // as the *capacity* to signal "unbounded pass-through". The *amount*, however,
+            // MUST reflect what's actually available on the live network right now: a lot
+            // of Forge-side consumers (AE2FluidCraft-Rework's fluid import bus included)
+            // decide whether/how much to drain purely by reading this number, never by
+            // probing drain() themselves. Reporting a hardcoded 0 here - even though it
+            // looks harmless for a "no buffer" duct - makes this port permanently
+            // undetectable to every one of those consumers, since they always compute
+            // "min(reportedAmount, wanted) == 0" and never even attempt the drain.
+            // This is still buffer-free: relayFromProviders(..., doTransfer=false) only
+            // sums live provider.getFluidAvailable(...) calls, nothing is stored here.
+            long available = 0;
+            FluidNetMK2 net = liveNetwork(self, pipeType);
+            if (net != null) {
+                available = relayFromProviders(net, pipeType, Integer.MAX_VALUE, false);
+            }
+            int reportedAmount = (int) Math.max(0, Math.min(Integer.MAX_VALUE, available));
+
+            return new FluidTankInfo[]{new FluidTankInfo(new FluidStack(forgeFluid, reportedAmount), Integer.MAX_VALUE)};
+        } catch (Throwable t) {
+            logError("pipeTankInfo", self, t);
+            return emptyInfo();
+        }
+    }
+
+    // ======================================================================
     // Pipe -> foreign IFluidHandler visual connection (block bounds / collision / model)
     // ======================================================================
 
@@ -683,6 +896,16 @@ public final class UniversalFluidBridge {
             if (forgeFluid == null) return false;
 
             ForgeDirection sideOnNeighbor = dir.getOpposite();
+
+            // Known "active" AE2FluidCraft-Rework busses (import/export) never expose
+            // themselves as an IFluidHandler - they reach out and call fill()/drain()
+            // on US, on their own tick, which pipeFill/pipeDrain already handle just
+            // fine. resolveFluidHandler() below can never find them (by design, since
+            // they aren't IFluidHandlers), so recognize them explicitly here purely so
+            // the duct also LOOKS connected on that face; this has no bearing on
+            // whether fluid actually moves, which was already working.
+            if (AE2PartHostCompat.isActiveForeignFluidPart(te, sideOnNeighbor)) return true;
+
             Object resolved = AE2PartHostCompat.resolveFluidHandler(te, sideOnNeighbor);
             if (!(resolved instanceof IFluidHandler)) return false;
 

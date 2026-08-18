@@ -343,6 +343,31 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private byte[] patchPipeBase(byte[] basicClass) {
         ClassNode cn = readClass(basicClass);
 
+        // Give the pipe/duct itself a Forge IFluidHandler face, so an ACTIVE
+        // foreign component (like an AE2FluidCraft-Rework fluid import/export
+        // bus, which reaches into the world on its own rather than waiting to
+        // be discovered) can fill/drain a bare duct directly.
+        if (!cn.interfaces.contains(FLUID_HANDLER)) {
+            addInterface(cn, FLUID_HANDLER);
+
+            String self = "L" + PIPE_BASE + ";";
+            addTrampoline(cn, "fill", "(" + DIR + STACK + "Z)I",
+                    "pipeFill", "(" + self + DIR + STACK + "Z)I");
+            addTrampoline(cn, "drain", "(" + DIR + STACK + "Z)" + STACK,
+                    "pipeDrain", "(" + self + DIR + STACK + "Z)" + STACK);
+            addTrampoline(cn, "drain", "(" + DIR + "IZ)" + STACK,
+                    "pipeDrainAmount", "(" + self + DIR + "IZ)" + STACK);
+            addTrampoline(cn, "canFill", "(" + DIR + FLUID + ")Z",
+                    "pipeCanFill", "(" + self + DIR + FLUID + ")Z");
+            addTrampoline(cn, "canDrain", "(" + DIR + FLUID + ")Z",
+                    "pipeCanDrain", "(" + self + DIR + FLUID + ")Z");
+            addTrampoline(cn, "getTankInfo", "(" + DIR + ")" + TANKINFO_ARR,
+                    "pipeTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
+
+            LOG.info("Patched " + PIPE_BASE + " with a universal Forge IFluidHandler bridge "
+                    + "(lets AE2FluidCraft-Rework and other active foreign fluid busses fill/drain ducts directly)");
+        }
+
         String tickName = TICK_DEOBF;
         MethodNode original = findMethod(cn, tickName, "()V");
         if (original == null) {
@@ -353,12 +378,13 @@ public class UniversalFluidTransformer implements IClassTransformer {
         if (original == null) {
             LOG.warning(PIPE_BASE + "#updateEntity()V not found under either the deobfuscated or SRG "
                     + "name - the installed NTM version may not match what this coremod expects. "
-                    + "Skipping the pipe auto-connect patch (direct machine-to-Forge bridging still works).");
-            return basicClass;
+                    + "Skipping the pipe auto-connect-to-foreign-neighbor patch (Forge calling "
+                    + "fill/drain/etc. directly on the duct itself still works).");
+            return writeClass(cn);
         }
 
         String renamed = tickName + "$hbm";
-        if (findMethod(cn, renamed, "()V") != null) return basicClass; // already patched
+        if (findMethod(cn, renamed, "()V") != null) return writeClass(cn); // already patched
 
         original.name = renamed;
 

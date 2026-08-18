@@ -36,6 +36,17 @@ public class ModConfig {
     public static boolean debugPipeForeignConnect;
 
     /**
+     * Lets NTM pipes/ducts themselves be filled/drained directly by an
+     * ACTIVE foreign fluid handler (one that reaches out into the world on
+     * its own, like an AE2FluidCraft-Rework fluid import/export bus), not
+     * just by passive foreign tanks that a duct discovers on its own.
+     * Buffer-free: it relays straight into the duct's own network, so
+     * throughput is bounded only by real demand/supply elsewhere on that
+     * network, same as any other connection point.
+     */
+    public static boolean enablePipeExternalPort;
+
+    /**
      * Loads configs from file and sets their values in game.
      * Finally, saves the configs if they have changed.
      */
@@ -110,6 +121,19 @@ public class ModConfig {
                 false,
                 "TEMPORARY DIAGNOSTIC. If true, spams the log every tick explaining exactly why each pipe\n" +
                         "did or didn't wire up to a foreign neighbor. Only turn on while debugging, then off again.\n"
+        );
+
+        ModConfig.enablePipeExternalPort = config.getBoolean(
+                "enablePipeExternalPort",
+                "universalPorts",
+                true,
+                "If true, NTM pipes/ducts also directly implement Forge's IFluidHandler themselves, not just\n" +
+                        "their machine/tank endpoints. This is what lets an ACTIVE foreign component that reaches\n" +
+                        "into the world on its own - such as an AE2FluidCraft-Rework fluid import/export bus placed\n" +
+                        "on an ME cable next to a bare duct - fill or drain that duct directly, with no NTM machine\n" +
+                        "or tank required at the boundary. The duct has no buffer of its own: it relays straight\n" +
+                        "into whatever's actually on its network, so it never throttles below real network\n" +
+                        "throughput. Requires enableUniversalFluidPorts to also be true.\n"
         );
 
         if (config.hasChanged()) config.save();
