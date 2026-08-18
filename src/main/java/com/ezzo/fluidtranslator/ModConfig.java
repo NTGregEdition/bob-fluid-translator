@@ -36,13 +36,7 @@ public class ModConfig {
     public static boolean debugPipeForeignConnect;
 
     /**
-     * Lets NTM pipes/ducts themselves be filled/drained directly by an
-     * ACTIVE foreign fluid handler (one that reaches out into the world on
-     * its own, like an AE2FluidCraft-Rework fluid import/export bus), not
-     * just by passive foreign tanks that a duct discovers on its own.
-     * Buffer-free: it relays straight into the duct's own network, so
-     * throughput is bounded only by real demand/supply elsewhere on that
-     * network, same as any other connection point.
+     * Lets NTM pipes/ducts themselves be filled/drained directly
      */
     public static boolean enablePipeExternalPort;
 

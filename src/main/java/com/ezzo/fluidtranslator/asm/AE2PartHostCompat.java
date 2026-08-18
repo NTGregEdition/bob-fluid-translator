@@ -19,7 +19,8 @@ final class AE2PartHostCompat {
 
     private static final String[] ACTIVE_FLUID_PART_CLASSES = {
             "com.glodblock.github.common.parts.PartFluidImportBus",
-            "com.glodblock.github.common.parts.PartFluidExportBus"
+            "com.glodblock.github.common.parts.PartFluidExportBus",
+            "com.glodblock.github.common.parts.PartFluidStorageBus"
     };
 
     private static boolean resolved = false;
