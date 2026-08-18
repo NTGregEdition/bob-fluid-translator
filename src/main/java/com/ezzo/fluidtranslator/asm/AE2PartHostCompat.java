@@ -17,14 +17,6 @@ final class AE2PartHostCompat {
 
     private static final String PART_HOST_CLASS = "appeng.api.parts.IPartHost";
 
-    // Known AE2FluidCraft-Rework parts that reach OUT to a neighbor's Forge
-    // IFluidHandler on their own tick, instead of exposing an IFluidHandler of
-    // their own for something else to call into. resolveFluidHandler() below can
-    // never find these (by design - they simply aren't IFluidHandlers), so a duct
-    // sitting next to one never sees a fillable/drainable target on that face and
-    // never visually connects, even though pipeFill/pipeDrain already move fluid
-    // through it fine once an AE2 bus reaches in. isActiveForeignFluidPart() below
-    // exists purely to fix that visual gap.
     private static final String[] ACTIVE_FLUID_PART_CLASSES = {
             "com.glodblock.github.common.parts.PartFluidImportBus",
             "com.glodblock.github.common.parts.PartFluidExportBus"
@@ -101,9 +93,6 @@ final class AE2PartHostCompat {
             try {
                 found.add(Class.forName(name));
             } catch (Throwable ignored) {
-                // AE2FluidCraft-Rework isn't installed, or this particular build doesn't
-                // have this class under this name - just skip it. Nothing else depends
-                // on this list; it only widens what a duct visually recognizes.
             }
         }
 
@@ -114,15 +103,6 @@ final class AE2PartHostCompat {
         }
     }
 
-    /**
-     * Whether the part on {@code sideOnHost} of {@code te} is a known "active" fluid
-     * bus (see {@link #ACTIVE_FLUID_PART_CLASSES}) - one that reaches out and calls
-     * fill()/drain() on ITS neighbor by itself, rather than being a passive
-     * IFluidHandler something else calls into. Used only to decide whether a duct
-     * should visually render/collide as connected on that face; it plays no part in
-     * the actual fluid transfer, which already happens via the duct's own
-     * IFluidHandler fill()/drain() (see UniversalFluidBridge#pipeFill/pipeDrain).
-     */
     static boolean isActiveForeignFluidPart(TileEntity te, ForgeDirection sideOnHost) {
         if (te == null) return false;
 

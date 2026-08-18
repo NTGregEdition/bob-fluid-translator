@@ -381,9 +381,6 @@ public final class UniversalFluidBridge {
     public static FluidStack baseProviderDrainAmount(IFluidProviderMK2 self, ForgeDirection from, int maxDrain, boolean doDrain) {
         if (!ModConfig.enableUniversalFluidPorts) return null;
         try {
-            // This interface level has no "which fluid?" query beyond the
-            // tank array, so use getAllTanks() (if the implementor exposes
-            // it meaningfully) to discover what's actually available.
             FluidTank[] tanks = self.getAllTanks();
             if (tanks == null) return null;
 
@@ -668,19 +665,7 @@ public final class UniversalFluidBridge {
     }
 
     // ======================================================================
-    // Pipe's OWN external Forge fluid port (lets an ACTIVE foreign component
-    // like an AE2FluidCraft-Rework fluid import/export bus fill/drain a bare
-    // duct directly, instead of only the duct being able to discover a
-    // passive foreign tank on its own via pipeDiscoverForeignNeighbors above)
-    //
-    // Deliberately buffer-free: a duct isn't a tank, so nothing is stored on
-    // it between calls. fill()/drain() reach straight into the duct's own
-    // live FluidNetMK2 and transfer directly against whatever's actually
-    // registered there right now (real machines/tanks, or other foreign
-    // neighbors already bridged via ForeignFluidPort above). Throughput is
-    // bounded only by their real demand/supply, not by any capacity of our
-    // own, so a duct behaves the same as any other point on the network
-    // instead of quietly throttling everything that passes through it.
+    // Pipe's own forge fluid
     // ======================================================================
 
     private static FluidNetMK2 liveNetwork(TileEntityPipeBaseNT self, FluidType type) {
@@ -753,9 +738,6 @@ public final class UniversalFluidBridge {
 
             FluidNetMK2 net = liveNetwork(self, priming ? incoming : pipeType);
             if (net == null) {
-                // No established network to relay into yet - most likely a fresh, untyped
-                // duct being touched for the very first time. Prime its type so the pipe's
-                // own tick joins a network next tick, but there's nowhere to put fluid yet.
                 if (doFill && priming) self.setType(incoming);
                 return 0;
             }
@@ -855,17 +837,6 @@ public final class UniversalFluidBridge {
             Fluid forgeFluid = ModFluidRegistry.getForgeFluid(pipeType);
             if (forgeFluid == null) return emptyInfo();
 
-            // A duct has no capacity/buffer of its own, so Integer.MAX_VALUE is reported
-            // as the *capacity* to signal "unbounded pass-through". The *amount*, however,
-            // MUST reflect what's actually available on the live network right now: a lot
-            // of Forge-side consumers (AE2FluidCraft-Rework's fluid import bus included)
-            // decide whether/how much to drain purely by reading this number, never by
-            // probing drain() themselves. Reporting a hardcoded 0 here - even though it
-            // looks harmless for a "no buffer" duct - makes this port permanently
-            // undetectable to every one of those consumers, since they always compute
-            // "min(reportedAmount, wanted) == 0" and never even attempt the drain.
-            // This is still buffer-free: relayFromProviders(..., doTransfer=false) only
-            // sums live provider.getFluidAvailable(...) calls, nothing is stored here.
             long available = 0;
             FluidNetMK2 net = liveNetwork(self, pipeType);
             if (net != null) {
@@ -897,13 +868,6 @@ public final class UniversalFluidBridge {
 
             ForgeDirection sideOnNeighbor = dir.getOpposite();
 
-            // Known "active" AE2FluidCraft-Rework busses (import/export) never expose
-            // themselves as an IFluidHandler - they reach out and call fill()/drain()
-            // on US, on their own tick, which pipeFill/pipeDrain already handle just
-            // fine. resolveFluidHandler() below can never find them (by design, since
-            // they aren't IFluidHandlers), so recognize them explicitly here purely so
-            // the duct also LOOKS connected on that face; this has no bearing on
-            // whether fluid actually moves, which was already working.
             if (AE2PartHostCompat.isActiveForeignFluidPart(te, sideOnNeighbor)) return true;
 
             Object resolved = AE2PartHostCompat.resolveFluidHandler(te, sideOnNeighbor);
