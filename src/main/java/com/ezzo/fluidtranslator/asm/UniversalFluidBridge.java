@@ -521,6 +521,7 @@ public final class UniversalFluidBridge {
                                          World world, int x, int y, int z, ForgeDirection dir) {
         if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enableAutoPushToForge) return;
         if (world == null || type == null || type.getID() == Fluids.NONE.getID()) return;
+        if (pressure != 0) return; // pressurized output must never be auto-pushed into a foreign Forge/AE2 handler
 
         try {
             TileEntity te = world.getTileEntity(x, y, z);
@@ -893,8 +894,11 @@ public final class UniversalFluidBridge {
 
         FluidTank target = null;
 
+        // Forge/AE2 fluid stacks carry no pressure value, so they may only ever land in an
+        // unpressurized (pressure == 0) tank. Pressurized tanks are invisible to this bridge;
+        // the only legitimate way to fill them is through an actual in-world compressor.
         for (FluidTank tank : tanks) {
-            if (tank.getTankType().getID() == incoming.getID()) {
+            if (tank.getPressure() == 0 && tank.getTankType().getID() == incoming.getID()) {
                 target = tank;
                 break;
             }
@@ -902,7 +906,7 @@ public final class UniversalFluidBridge {
 
         if (target == null) {
             for (FluidTank tank : tanks) {
-                if (tank.getTankType().getID() == Fluids.NONE.getID()) {
+                if (tank.getPressure() == 0 && tank.getTankType().getID() == Fluids.NONE.getID()) {
                     target = tank;
                     break;
                 }
@@ -932,7 +936,7 @@ public final class UniversalFluidBridge {
         if (wanted == null) return null;
 
         for (FluidTank tank : tanks) {
-            if (tank.getTankType().getID() == wanted.getID() && tank.getFill() > 0) {
+            if (tank.getPressure() == 0 && tank.getTankType().getID() == wanted.getID() && tank.getFill() > 0) {
                 Fluid forgeFluid = ModFluidRegistry.getForgeFluid(tank.getTankType());
                 if (forgeFluid == null) return null;
 
@@ -953,6 +957,7 @@ public final class UniversalFluidBridge {
         if (tanks == null || maxDrain <= 0) return null;
 
         for (FluidTank tank : tanks) {
+            if (tank.getPressure() != 0) continue; // never let a pressurized tank drain out as plain Forge fluid
             if (tank.getFill() <= 0 || tank.getTankType().getID() == Fluids.NONE.getID()) continue;
 
             Fluid forgeFluid = ModFluidRegistry.getForgeFluid(tank.getTankType());
@@ -977,6 +982,7 @@ public final class UniversalFluidBridge {
         if (incoming == null || incoming.getID() == Fluids.NONE.getID()) return false;
 
         for (FluidTank tank : tanks) {
+            if (tank.getPressure() != 0) continue;
             if (tank.getTankType().getID() == Fluids.NONE.getID()
                     || tank.getTankType().getID() == incoming.getID()) {
                 return true;
@@ -992,7 +998,7 @@ public final class UniversalFluidBridge {
         if (wanted == null) return false;
 
         for (FluidTank tank : tanks) {
-            if (tank.getTankType().getID() == wanted.getID() && tank.getFill() > 0) return true;
+            if (tank.getPressure() == 0 && tank.getTankType().getID() == wanted.getID() && tank.getFill() > 0) return true;
         }
         return false;
     }
@@ -1002,6 +1008,10 @@ public final class UniversalFluidBridge {
 
         List<FluidTankInfo> infos = new ArrayList<FluidTankInfo>(tanks.length);
         for (FluidTank tank : tanks) {
+            if (tank.getPressure() != 0) {
+                infos.add(new FluidTankInfo(null, 0));
+                continue;
+            }
             Fluid forgeFluid = tank.getTankType().getID() == Fluids.NONE.getID()
                     ? null
                     : ModFluidRegistry.getForgeFluid(tank.getTankType());
