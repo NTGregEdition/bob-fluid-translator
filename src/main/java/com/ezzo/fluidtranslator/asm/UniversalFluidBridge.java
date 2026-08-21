@@ -527,9 +527,7 @@ public final class UniversalFluidBridge {
             TileEntity te = world.getTileEntity(x, y, z);
             if (te == null || te == self) return;
 
-            // If the neighbour is already a native HBM receiver, the untouched
-            // original tryProvide() call already handled it - don't double dip.
-            if (te instanceof api.hbm.fluidmk2.IFluidReceiverMK2) return;
+            if (te instanceof api.hbm.fluidmk2.IFluidReceiverMK2 || te instanceof IFluidConnectorMK2) return;
 
             ForgeDirection sideOnNeighbor = dir.getOpposite();
             Object resolved = AE2PartHostCompat.resolveFluidHandler(te, sideOnNeighbor);
@@ -622,7 +620,7 @@ public final class UniversalFluidBridge {
                 int nz = self.zCoord + dir.offsetZ;
                 TileEntity te = world.getTileEntity(nx, ny, nz);
 
-                if (te == null || te == self || te instanceof IFluidConnectorMK2) {
+                if (te == null || te == self || te instanceof IFluidConnectorMK2 || te instanceof IFluidReceiverMK2 || te instanceof IFluidProviderMK2) {
                     ports[idx] = null;
                     continue;
                 }
@@ -863,6 +861,8 @@ public final class UniversalFluidBridge {
         try {
             TileEntity te = world.getTileEntity(x, y, z);
             if (te == null) return false;
+
+            if (te instanceof IFluidConnectorMK2) return false;
 
             Fluid forgeFluid = ModFluidRegistry.getForgeFluid(type);
             if (forgeFluid == null) return false;
