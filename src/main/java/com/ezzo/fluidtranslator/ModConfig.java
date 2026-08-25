@@ -91,7 +91,7 @@ public class ModConfig {
         ModConfig.enableAutoPushToForge = config.getBoolean(
                 "enableAutoPushToForge",
                 "universalPorts",
-                true,
+                false,
                 "EXPERIMENTAL. If true, NTM fluid senders also actively try to push fluid into a\n" +
                         "neighboring plain-Forge fluid handler every tick, instead of only reacting when\n" +
                         "something else calls them. Disable this if fluid seems to leak somewhere unexpected;\n" +

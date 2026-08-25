@@ -16,6 +16,7 @@ import com.hbm.inventory.fluid.Fluids;
 import com.hbm.inventory.fluid.tank.FluidTank;
 import com.hbm.tileentity.TileEntityProxyBase;
 import com.hbm.tileentity.network.TileEntityPipeBaseNT;
+import com.hbm.tileentity.network.TileEntityPipeExhaust;
 import com.hbm.uninos.GenNode;
 import com.hbm.uninos.UniNodespace;
 import net.minecraft.tileentity.TileEntity;
@@ -846,6 +847,208 @@ public final class UniversalFluidBridge {
             return new FluidTankInfo[]{new FluidTankInfo(new FluidStack(forgeFluid, reportedAmount), Integer.MAX_VALUE)};
         } catch (Throwable t) {
             logError("pipeTankInfo", self, t);
+            return emptyInfo();
+        }
+    }
+
+    // ======================================================================
+    // TileEntityPipeExhaust
+    // ======================================================================
+
+    private static final Map<TileEntityPipeExhaust, ForeignFluidPort[]> EXHAUST_FOREIGN_PORTS =
+            new WeakHashMap<TileEntityPipeExhaust, ForeignFluidPort[]>();
+
+    @SuppressWarnings("unchecked")
+    public static void exhaustDiscoverForeignNeighbors(TileEntityPipeExhaust self) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeForeignConnect) return;
+
+        try {
+            World world = self.getWorldObj();
+            if (world == null || world.isRemote) return;
+
+            FluidType[] smokes = self.getSmokes();
+
+            FluidNetMK2[] nets = new FluidNetMK2[smokes.length];
+            boolean anyLive = false;
+            for (int i = 0; i < smokes.length; i++) {
+                nets[i] = exhaustLiveNetwork(self, smokes[i]);
+                if (nets[i] != null) anyLive = true;
+            }
+            if (!anyLive) return;
+
+            ForeignFluidPort[] ports = EXHAUST_FOREIGN_PORTS.get(self);
+            if (ports == null) {
+                ports = new ForeignFluidPort[6];
+                EXHAUST_FOREIGN_PORTS.put(self, ports);
+            }
+
+            for (ForgeDirection dir : ForgeDirection.VALID_DIRECTIONS) {
+                int idx = dir.ordinal();
+                int nx = self.xCoord + dir.offsetX;
+                int ny = self.yCoord + dir.offsetY;
+                int nz = self.zCoord + dir.offsetZ;
+                TileEntity te = world.getTileEntity(nx, ny, nz);
+
+                if (te == null || te == self || te instanceof IFluidConnectorMK2 || te instanceof IFluidReceiverMK2 || te instanceof IFluidProviderMK2) {
+                    ports[idx] = null;
+                    continue;
+                }
+
+                if (AE2PartHostCompat.resolveFluidHandler(te, dir.getOpposite()) == null) {
+                    ports[idx] = null;
+                    continue;
+                }
+
+                ForeignFluidPort port = ports[idx];
+                if (port == null || port.target != te) {
+                    port = new ForeignFluidPort(te, dir.getOpposite());
+                    ports[idx] = port;
+                }
+
+                for (FluidNetMK2 net : nets) {
+                    if (net == null) continue;
+                    net.addProvider(port);
+                    net.addReceiver(port);
+                }
+            }
+        } catch (Throwable t) {
+            FluidTranslator.logger.error("UniversalFluidBridge: error discovering foreign fluid neighbors for the exhaust duct at "
+                    + self.xCoord + "," + self.yCoord + "," + self.zCoord, t);
+        }
+    }
+
+    private static FluidNetMK2 exhaustLiveNetwork(TileEntityPipeExhaust self, FluidType type) {
+        if (type == null || type.getID() == Fluids.NONE.getID()) return null;
+        World world = self.getWorldObj();
+        if (world == null) return null;
+
+        GenNode node = UniNodespace.getNode(world, self.xCoord, self.yCoord, self.zCoord, type.getNetworkProvider());
+        if (node == null || !node.hasValidNet()) return null;
+
+        return (FluidNetMK2) node.net;
+    }
+
+    private static FluidType matchSmokeType(FluidType[] smokes, FluidType candidate) {
+        if (candidate == null) return null;
+        for (FluidType smoke : smokes) {
+            if (smoke.getID() == candidate.getID()) return smoke;
+        }
+        return null;
+    }
+
+    public static int exhaustFill(TileEntityPipeExhaust self, ForgeDirection from, FluidStack resource, boolean doFill) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return 0;
+        try {
+            if (resource == null || resource.getFluid() == null || resource.amount <= 0) return 0;
+
+            FluidType incoming = ModFluidRegistry.getHBMFluid(resource.getFluid());
+            FluidType smoke = matchSmokeType(self.getSmokes(), incoming);
+            if (smoke == null) return 0;
+
+            FluidNetMK2 net = exhaustLiveNetwork(self, smoke);
+            if (net == null) return 0;
+
+            return (int) relayToReceivers(net, smoke, resource.amount, doFill);
+        } catch (Throwable t) {
+            logError("exhaustFill", self, t);
+            return 0;
+        }
+    }
+
+    public static FluidStack exhaustDrain(TileEntityPipeExhaust self, ForgeDirection from, FluidStack resource, boolean doDrain) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return null;
+        try {
+            if (resource == null || resource.getFluid() == null) return null;
+
+            FluidType requested = ModFluidRegistry.getHBMFluid(resource.getFluid());
+            FluidType smoke = matchSmokeType(self.getSmokes(), requested);
+            if (smoke == null) return null;
+
+            return exhaustDrainInternal(self, smoke, resource.amount, doDrain);
+        } catch (Throwable t) {
+            logError("exhaustDrain", self, t);
+            return null;
+        }
+    }
+
+    public static FluidStack exhaustDrainAmount(TileEntityPipeExhaust self, ForgeDirection from, int maxDrain, boolean doDrain) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return null;
+        try {
+            if (maxDrain <= 0) return null;
+
+            for (FluidType smoke : self.getSmokes()) {
+                FluidStack drained = exhaustDrainInternal(self, smoke, maxDrain, doDrain);
+                if (drained != null) return drained; // first smoke variant with anything available wins
+            }
+            return null;
+        } catch (Throwable t) {
+            logError("exhaustDrainAmount", self, t);
+            return null;
+        }
+    }
+
+    private static FluidStack exhaustDrainInternal(TileEntityPipeExhaust self, FluidType smoke, int maxDrain, boolean doDrain) {
+        FluidNetMK2 net = exhaustLiveNetwork(self, smoke);
+        if (net == null) return null;
+
+        long drained = relayFromProviders(net, smoke, maxDrain, doDrain);
+        if (drained <= 0) return null;
+
+        Fluid forgeFluid = ModFluidRegistry.getForgeFluid(smoke);
+        if (forgeFluid == null) return null;
+
+        return new FluidStack(forgeFluid, (int) drained);
+    }
+
+    public static boolean exhaustCanFill(TileEntityPipeExhaust self, ForgeDirection from, Fluid fluid) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return false;
+        try {
+            FluidType incoming = ModFluidRegistry.getHBMFluid(fluid);
+            return matchSmokeType(self.getSmokes(), incoming) != null;
+        } catch (Throwable t) {
+            logError("exhaustCanFill", self, t);
+            return false;
+        }
+    }
+
+    public static boolean exhaustCanDrain(TileEntityPipeExhaust self, ForgeDirection from, Fluid fluid) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return false;
+        try {
+            if (fluid == null) return true;
+            FluidType requested = ModFluidRegistry.getHBMFluid(fluid);
+            return matchSmokeType(self.getSmokes(), requested) != null;
+        } catch (Throwable t) {
+            logError("exhaustCanDrain", self, t);
+            return false;
+        }
+    }
+
+    public static FluidTankInfo[] exhaustTankInfo(TileEntityPipeExhaust self, ForgeDirection from) {
+        if (!ModConfig.enableUniversalFluidPorts || !ModConfig.enablePipeExternalPort) return emptyInfo();
+        try {
+            FluidType[] smokes = self.getSmokes();
+            List<FluidTankInfo> infos = new ArrayList<FluidTankInfo>(smokes.length);
+
+            for (FluidType smoke : smokes) {
+                Fluid forgeFluid = ModFluidRegistry.getForgeFluid(smoke);
+                if (forgeFluid == null) {
+                    infos.add(new FluidTankInfo(null, 0));
+                    continue;
+                }
+
+                long available = 0;
+                FluidNetMK2 net = exhaustLiveNetwork(self, smoke);
+                if (net != null) {
+                    available = relayFromProviders(net, smoke, Integer.MAX_VALUE, false);
+                }
+                int reportedAmount = (int) Math.max(0, Math.min(Integer.MAX_VALUE, available));
+
+                infos.add(new FluidTankInfo(new FluidStack(forgeFluid, reportedAmount), Integer.MAX_VALUE));
+            }
+
+            return infos.toArray(new FluidTankInfo[0]);
+        } catch (Throwable t) {
+            logError("exhaustTankInfo", self, t);
             return emptyInfo();
         }
     }

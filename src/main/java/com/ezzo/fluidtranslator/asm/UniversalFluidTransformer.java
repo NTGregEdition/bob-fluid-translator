@@ -27,6 +27,7 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private static final String BASE_PROVIDER = "api/hbm/fluidmk2/IFluidProviderMK2";
     private static final String PROXY_BASE = "com/hbm/tileentity/TileEntityProxyBase";
     private static final String PIPE_BASE = "com/hbm/tileentity/network/TileEntityPipeBaseNT";
+    private static final String EXHAUST_PIPE = "com/hbm/tileentity/network/TileEntityPipeExhaust";
     private static final String LIBRARY = "com/hbm/lib/Library";
 
     private static final String LEGACY_TRANSCEIVER = "api/hbm/fluid/IFluidStandardTransceiver";
@@ -76,6 +77,9 @@ public class UniversalFluidTransformer implements IClassTransformer {
             }
             if (transformedName.equals("com.hbm.tileentity.network.TileEntityPipeBaseNT")) {
                 return patchPipeBase(basicClass);
+            }
+            if (transformedName.equals("com.hbm.tileentity.network.TileEntityPipeExhaust")) {
+                return patchPipeExhaust(basicClass);
             }
             if (transformedName.equals("com.hbm.lib.Library")) {
                 return patchLibrary(basicClass);
@@ -406,6 +410,73 @@ public class UniversalFluidTransformer implements IClassTransformer {
         cn.methods.add(wrapper);
 
         LOG.info("Patched " + PIPE_BASE + "#" + tickName + " to also auto-discover foreign IFluidHandler neighbors");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // TileEntityPipeExhaust
+    // ------------------------------------------------------------------
+
+    private byte[] patchPipeExhaust(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+
+        if (!cn.interfaces.contains(FLUID_HANDLER)) {
+            addInterface(cn, FLUID_HANDLER);
+
+            String self = "L" + EXHAUST_PIPE + ";";
+            addTrampoline(cn, "fill", "(" + DIR + STACK + "Z)I",
+                    "exhaustFill", "(" + self + DIR + STACK + "Z)I");
+            addTrampoline(cn, "drain", "(" + DIR + STACK + "Z)" + STACK,
+                    "exhaustDrain", "(" + self + DIR + STACK + "Z)" + STACK);
+            addTrampoline(cn, "drain", "(" + DIR + "IZ)" + STACK,
+                    "exhaustDrainAmount", "(" + self + DIR + "IZ)" + STACK);
+            addTrampoline(cn, "canFill", "(" + DIR + FLUID + ")Z",
+                    "exhaustCanFill", "(" + self + DIR + FLUID + ")Z");
+            addTrampoline(cn, "canDrain", "(" + DIR + FLUID + ")Z",
+                    "exhaustCanDrain", "(" + self + DIR + FLUID + ")Z");
+            addTrampoline(cn, "getTankInfo", "(" + DIR + ")" + TANKINFO_ARR,
+                    "exhaustTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
+
+            LOG.info("Patched " + EXHAUST_PIPE + " with a universal Forge IFluidHandler bridge "
+                    + "(fixed to the SMOKE/SMOKE_LEADED/SMOKE_POISON networks it actually carries)");
+        }
+
+        String tickName = TICK_DEOBF;
+        MethodNode original = findMethod(cn, tickName, "()V");
+        if (original == null) {
+            tickName = TICK_SRG;
+            original = findMethod(cn, tickName, "()V");
+        }
+
+        if (original == null) {
+            LOG.warning(EXHAUST_PIPE + "#updateEntity()V not found under either the deobfuscated or SRG "
+                    + "name - the installed NTM version may not match what this coremod expects. "
+                    + "Skipping the exhaust-duct auto-connect-to-foreign-neighbor patch (Forge calling "
+                    + "fill/drain/etc. directly on the duct itself still works).");
+            return writeClass(cn);
+        }
+
+        String renamed = tickName + "$hbm";
+        if (findMethod(cn, renamed, "()V") != null) return writeClass(cn);
+
+        original.name = renamed;
+
+        MethodNode wrapper = new MethodNode(Opcodes.ACC_PUBLIC, tickName, "()V", null, null);
+        InsnList il = new InsnList();
+
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, EXHAUST_PIPE, renamed, "()V", false));
+
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "exhaustDiscoverForeignNeighbors",
+                "(L" + EXHAUST_PIPE + ";)V", false));
+
+        il.add(new InsnNode(Opcodes.RETURN));
+
+        wrapper.instructions = il;
+        cn.methods.add(wrapper);
+
+        LOG.info("Patched " + EXHAUST_PIPE + "#" + tickName + " to also auto-discover foreign IFluidHandler neighbors");
         return writeClass(cn);
     }
 
