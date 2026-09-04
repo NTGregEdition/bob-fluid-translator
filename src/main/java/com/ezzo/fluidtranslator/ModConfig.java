@@ -41,6 +41,12 @@ public class ModConfig {
     public static boolean enablePipeExternalPort;
 
     /**
+     * Registers HBM's own fluid containers (portable tanks, lead tanks, barrels, canisters, etc.)
+     * as plain Forge fluid containers, so they work like buckets in AE2's fluid terminal/patterns.
+     */
+    public static boolean enableHBMContainerBridge;
+
+    /**
      * Loads configs from file and sets their values in game.
      * Finally, saves the configs if they have changed.
      */
@@ -128,6 +134,21 @@ public class ModConfig {
                         "or tank required at the boundary. The duct has no buffer of its own: it relays straight\n" +
                         "into whatever's actually on its network, so it never throttles below real network\n" +
                         "throughput. Requires enableUniversalFluidPorts to also be true.\n"
+        );
+
+        ModConfig.enableHBMContainerBridge = config.getBoolean(
+                "enableHBMContainerBridge",
+                "universalPorts",
+                true,
+                "If true, every fluid container item HBM itself already tracks (portable fluid tanks,\n" +
+                        "lead tanks, barrels, canisters, gas tanks, fuel cells, IV bags, etc.) is also\n" +
+                        "registered into Forge's own FluidContainerRegistry, reusing HBM's own full/empty\n" +
+                        "items, amounts, and fluid mappings as-is. This makes those items work as plain\n" +
+                        "Forge fluid containers - exactly like a filled bucket - anywhere that honors the\n" +
+                        "standard Forge convention. This is what lets AE2FluidCraft-Rework's ME Fluid Pattern\n" +
+                        "Terminal/Encoder, its fluid storage cell setup, its import/export/storage bus GUIs,\n" +
+                        "and AE2's own fluid terminal accept NTM tanks/barrels/canisters directly, the same\n" +
+                        "way they already accept vanilla-style buckets.\n"
         );
 
         if (config.hasChanged()) config.save();

@@ -14,6 +14,7 @@ import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
+import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.registry.GameRegistry;
@@ -28,7 +29,7 @@ import org.apache.logging.log4j.Logger;
 public class FluidTranslator
 {
     public static final String MODID = "bobfluidtranslator";
-    public static final String VERSION = "2.1.10";
+    public static final String VERSION = "2.1.11";
 
     @SidedProxy(
             clientSide = "com.ezzo.fluidtranslator.ClientProxy",
@@ -82,6 +83,12 @@ public class FluidTranslator
         NetworkRegistry.INSTANCE.registerGuiHandler(this, new GuiHandler());
         proxy.registerEvents();
         addRecipes();
+    }
+
+    @EventHandler
+    public void postInit(FMLPostInitializationEvent event)
+    {
+        ModFluidRegistry.bridgeHBMContainersToForge();
     }
 
     public void addRecipes() {

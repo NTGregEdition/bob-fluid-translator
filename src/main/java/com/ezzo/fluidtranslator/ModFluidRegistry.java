@@ -3,6 +3,7 @@ package com.ezzo.fluidtranslator;
 import com.ezzo.fluidtranslator.blocks.CustomFluidBlock;
 import com.ezzo.fluidtranslator.item.CustomFluidItemBlock;
 import com.ezzo.fluidtranslator.item.GenericBucket;
+import com.hbm.inventory.FluidContainer;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
 import cpw.mods.fml.common.registry.GameRegistry;
@@ -122,6 +123,54 @@ public class ModFluidRegistry {
                 .forEach(result::add);
 
         return result;
+    }
+
+    public static void bridgeHBMContainersToForge() {
+        if (!ModConfig.enableHBMContainerBridge) return;
+
+        int registered = 0;
+        int skipped = 0;
+
+        for (FluidContainer con : com.hbm.inventory.FluidContainerRegistry.allContainers) {
+
+            if (con == null || con.fullContainer == null || con.emptyContainer == null || con.content <= 0) {
+                skipped++;
+                continue;
+            }
+
+            Fluid forgeFluid = getForgeFluid(con.type);
+            if (forgeFluid == null) {
+                skipped++;
+                continue;
+            }
+
+            ItemStack full = con.fullContainer.copy();
+            full.stackSize = 1;
+
+            try {
+                if (FluidContainerRegistry.isFilledContainer(full)) {
+                    skipped++;
+                    continue;
+                }
+
+                ItemStack empty = con.emptyContainer.copy();
+                empty.stackSize = 1;
+
+                FluidContainerRegistry.registerFluidContainer(new FluidStack(forgeFluid, con.content), full, empty);
+                registered++;
+            } catch (Throwable t) {
+                skipped++;
+                FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge HBM container "
+                        + full.getItem().getUnlocalizedName() + ":" + full.getItemDamage()
+                        + " (fluid " + con.type.getName() + ") into Forge's FluidContainerRegistry", t);
+            }
+        }
+
+        FluidTranslator.logger.info("ModFluidRegistry: bridged " + registered
+                + " HBM fluid container(s) into Forge's FluidContainerRegistry (" + skipped
+                + " skipped - no Forge fluid mapping, already registered, or invalid entry). "
+                + "These now behave like plain Forge fluid containers anywhere that honors the "
+                + "standard convention, including AE2FluidCraft-Rework's fluid terminal/pattern UIs.");
     }
 
     /**
