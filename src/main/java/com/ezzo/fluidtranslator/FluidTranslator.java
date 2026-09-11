@@ -29,7 +29,7 @@ import org.apache.logging.log4j.Logger;
 public class FluidTranslator
 {
     public static final String MODID = "bobfluidtranslator";
-    public static final String VERSION = "2.1.11";
+    public static final String VERSION = "2.1.12";
 
     @SidedProxy(
             clientSide = "com.ezzo.fluidtranslator.ClientProxy",

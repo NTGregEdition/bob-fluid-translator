@@ -6,6 +6,7 @@ import com.ezzo.fluidtranslator.item.GenericBucket;
 import com.hbm.inventory.FluidContainer;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
+import com.hbm.items.ModItems;
 import cpw.mods.fml.common.registry.GameRegistry;
 import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
@@ -163,6 +164,55 @@ public class ModFluidRegistry {
                 FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge HBM container "
                         + full.getItem().getUnlocalizedName() + ":" + full.getItemDamage()
                         + " (fluid " + con.type.getName() + ") into Forge's FluidContainerRegistry", t);
+            }
+        }
+
+        FluidType[] order = Fluids.getInNiceOrder();
+        for (int i = 1; i < order.length; i++) {
+            FluidType type = order[i];
+
+            Fluid forgeFluid = getForgeFluid(type);
+            if (forgeFluid == null) {
+                skipped++;
+                continue;
+            }
+
+            if (!type.hasNoContainer()) {
+                ItemStack full = new ItemStack(ModItems.fluid_pack_full, 1, type.getID());
+                try {
+                    if (!FluidContainerRegistry.isFilledContainer(full)) {
+                        FluidContainerRegistry.registerFluidContainer(new FluidStack(forgeFluid, 32000),
+                                full, new ItemStack(ModItems.fluid_pack_empty));
+                        registered++;
+                    } else skipped++;
+                } catch (Throwable t) {
+                    skipped++;
+                    FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge fluid pack for " + type.getName(), t);
+                }
+            }
+
+            ItemStack fullId = new ItemStack(ModItems.fluid_identifier_multi, 1, type.getID());
+            try {
+                if (!FluidContainerRegistry.isFilledContainer(fullId)) {
+                    FluidContainerRegistry.registerFluidContainer(new FluidStack(forgeFluid, FluidContainerRegistry.BUCKET_VOLUME),
+                            fullId, new ItemStack(ModItems.fluid_identifier_multi, 1, 0));
+                    registered++;
+                } else skipped++;
+            } catch (Throwable t) {
+                skipped++;
+                FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge fluid identifier for " + type.getName(), t);
+            }
+
+            ItemStack fullIcon = new ItemStack(ModItems.fluid_icon, 1, type.getID());
+            try {
+                if (!FluidContainerRegistry.isFilledContainer(fullIcon)) {
+                    FluidContainerRegistry.registerFluidContainer(new FluidStack(forgeFluid, FluidContainerRegistry.BUCKET_VOLUME),
+                            fullIcon, new ItemStack(ModItems.fluid_icon, 1, 0));
+                    registered++;
+                } else skipped++;
+            } catch (Throwable t) {
+                skipped++;
+                FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge fluid icon for " + type.getName(), t);
             }
         }
 
