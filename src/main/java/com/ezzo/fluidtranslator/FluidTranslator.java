@@ -10,7 +10,9 @@ import com.ezzo.fluidtranslator.tileentity.TileEntityUniversalTank;
 import com.ezzo.fluidtranslator.item.ItemFluidIdentifierReset;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
+import com.hbm.inventory.OreDictManager.DictFrame;
 import com.hbm.items.ModItems;
+import com.hbm.items.machine.ItemCircuit.EnumCircuitType;
 import cpw.mods.fml.common.Mod;
 import cpw.mods.fml.common.Mod.EventHandler;
 import cpw.mods.fml.common.SidedProxy;
@@ -24,6 +26,7 @@ import net.minecraft.item.ItemStack;
 import net.minecraft.item.Item;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fluids.FluidRegistry;
+import net.minecraftforge.oredict.ShapedOreRecipe;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -121,9 +124,18 @@ public class FluidTranslator
                 "ZYZ",
                 "XWX",
                 'X', ModItems.plate_steel,
-                'Y', new ItemStack(ModItems.circuit, 1, 8),
+                'Y', DictFrame.fromOne(ModItems.circuit, EnumCircuitType.BASIC),
                 'W', Items.comparator,
                 'Z', new ItemStack(com.hbm.blocks.ModBlocks.fluid_duct_neo)
         );
+
+        GameRegistry.addRecipe(new ShapedOreRecipe(new ItemStack(fluidIdentifierReset),
+                "XWX",
+                "WYW",
+                "XWX",
+                'X', ModItems.ingot_steel,
+                'Y', DictFrame.fromOne(ModItems.circuit, EnumCircuitType.ADVANCED),
+                'W', ModItems.ingot_niobium
+        ));
     }
 }

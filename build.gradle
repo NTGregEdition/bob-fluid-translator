@@ -58,8 +58,8 @@ dependencies {
     // or you may define them like so..
     //compile "some.group:artifact:version:classifier"
     //compile "some.group:artifact:version"
-    compile files("libs/HBM-NTM-[1.0.27_X5663].jar")
-    compileOnly files("libs/HBM-NTM-[1.0.27_X5663]-sources.jar")
+    compile files("libs/HBM-NTM-.1.0.27_X5808.jar")
+    compileOnly files("libs/HBM-NTM-.1.0.27_X5808-sources.jar")
 
     implementation "li.cil.oc:OpenComputers:MC1.7.10-1.5.+:api"
 
