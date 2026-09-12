@@ -11,6 +11,7 @@ import api.hbm.fluidmk2.IFluidStandardTransceiverMK2;
 import com.ezzo.fluidtranslator.FluidTranslator;
 import com.ezzo.fluidtranslator.ModConfig;
 import com.ezzo.fluidtranslator.ModFluidRegistry;
+import com.ezzo.fluidtranslator.item.ItemFluidIdentifierReset;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
 import com.hbm.inventory.fluid.tank.FluidTank;
@@ -19,6 +20,10 @@ import com.hbm.tileentity.network.TileEntityPipeBaseNT;
 import com.hbm.tileentity.network.TileEntityPipeExhaust;
 import com.hbm.uninos.GenNode;
 import com.hbm.uninos.UniNodespace;
+import com.hbm.inventory.recipes.CompressorRecipes;
+import com.hbm.inventory.recipes.CompressorRecipes.CompressorRecipe;
+import com.hbm.tileentity.machine.TileEntityMachineCompressorBase;
+import com.hbm.util.Tuple.Pair;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
@@ -27,6 +32,7 @@ import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidTankInfo;
 import net.minecraftforge.fluids.IFluidHandler;
+import net.minecraft.item.ItemStack;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -1080,6 +1086,65 @@ public final class UniversalFluidBridge {
             IFluidHandler handler = (IFluidHandler) resolved;
             return handler.canFill(sideOnNeighbor, forgeFluid) || handler.canDrain(sideOnNeighbor, forgeFluid);
         } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    public static boolean shouldBlockReset(FluidTank tank, int in, ItemStack[] slots) {
+        try {
+            if (slots == null || in < 0 || in >= slots.length) return false;
+
+            ItemStack held = slots[in];
+            if (held == null || !(held.getItem() instanceof ItemFluidIdentifierReset)) return false;
+
+            return tank.getFill() > 0;
+        } catch (Throwable t) {
+            logError("shouldBlockReset", tank, t);
+            return false;
+        }
+    }
+
+    public static boolean isInPlaceReset(FluidTank tank, int in, ItemStack[] slots) {
+        try {
+            if (slots == null || in < 0 || in >= slots.length) return false;
+
+            ItemStack held = slots[in];
+            if (held == null || !(held.getItem() instanceof ItemFluidIdentifierReset)) return false;
+
+            if (tank.getFill() > 0) return false;               // shouldBlockReset already refuses this
+            if (tank.getTankType() == Fluids.NONE) return false; // nothing to do, let the original no-op
+
+            tank.setTankType(Fluids.NONE); // in place - slots[in]/slots[out] are never touched
+            return true;
+        } catch (Throwable t) {
+            logError("isInPlaceReset", tank, t);
+            return false;
+        }
+    }
+
+    public static boolean shouldSkipCompressorSync(TileEntityMachineCompressorBase machine) {
+        try {
+            FluidTank input = machine.tanks[0];
+            FluidTank output = machine.tanks[1];
+
+            if (output.getFill() <= 0) return false;
+
+            CompressorRecipe recipe = CompressorRecipes.recipes.get(
+                    new Pair<FluidType, Integer>(input.getTankType(), input.getPressure()));
+
+            return recipe == null;
+        } catch (Throwable t) {
+            logError("shouldSkipCompressorSync", machine, t);
+            return false;
+        }
+    }
+
+    public static boolean shouldBlockTypeChange(FluidTank tank, FluidType newType) {
+        try {
+            FluidType resolved = newType == null ? Fluids.NONE : newType;
+            return resolved == Fluids.NONE && tank.getFill() > 0;
+        } catch (Throwable t) {
+            logError("shouldBlockTypeChange", tank, t);
             return false;
         }
     }

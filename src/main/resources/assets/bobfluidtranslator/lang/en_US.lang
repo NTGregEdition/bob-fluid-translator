@@ -1,2 +1,4 @@
 tile.universalFluidTank.name=Universal Fluid Tank (LEGACY)
 tile.ntmAdapter.name=NTM Fluid Adapter (LEGACY)
+item.fluid_identifier_reset.name=Fluid Identifier Reset
+item.fluid_identifier_reset.info=Resets a tank's fluid type to None. Refuses if the tank still has fluid in it.

@@ -11,6 +11,9 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
+import org.objectweb.asm.tree.JumpInsnNode;
+import org.objectweb.asm.tree.LabelNode;
+import org.objectweb.asm.tree.FrameNode;
 
 import java.util.List;
 import java.util.logging.Level;
@@ -49,6 +52,18 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private static final String CAN_CONNECT_FLUID_DESC =
             "(Lnet/minecraft/world/IBlockAccess;III" + DIR + "Lcom/hbm/inventory/fluid/FluidType;)Z";
 
+    private static final String FLUID_TANK = "com/hbm/inventory/fluid/tank/FluidTank";
+    private static final String ITEM_STACK = "Lnet/minecraft/item/ItemStack;";
+    private static final String SET_TYPE_DESC = "(II[" + ITEM_STACK + ")Z";
+    private static final String SHOULD_BLOCK_RESET_DESC = "(L" + FLUID_TANK + ";I[" + ITEM_STACK + ")Z";
+
+    private static final String COMPRESSOR_BASE = "com/hbm/tileentity/machine/TileEntityMachineCompressorBase";
+    private static final String SETUP_TANKS_DESC = "()V";
+    private static final String SHOULD_SKIP_COMPRESSOR_DESC = "(L" + COMPRESSOR_BASE + ";)Z";
+
+    private static final String FLUID_TYPE = "Lcom/hbm/inventory/fluid/FluidType;";
+    private static final String SET_TANK_TYPE_DESC = "(" + FLUID_TYPE + ")V";
+    private static final String SHOULD_BLOCK_TYPE_CHANGE_DESC = "(L" + FLUID_TANK + ";" + FLUID_TYPE + ")Z";
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         if (basicClass == null || transformedName == null) return basicClass;
@@ -87,6 +102,12 @@ public class UniversalFluidTransformer implements IClassTransformer {
 
             if (transformedName.startsWith("com.hbm.tileentity.")) {
                 return patchDiamondConflict(basicClass, transformedName);
+            }
+            if (transformedName.equals("com.hbm.inventory.fluid.tank.FluidTank")) {
+                return patchFluidTank(basicClass);
+            }
+            if (transformedName.equals("com.hbm.tileentity.machine.TileEntityMachineCompressorBase")) {
+                return patchCompressorBase(basicClass);
             }
         } catch (Throwable t) {
             LOG.log(Level.SEVERE, "Failed to patch " + transformedName + " for universal fluid ports", t);
@@ -528,6 +549,130 @@ public class UniversalFluidTransformer implements IClassTransformer {
         cn.methods.add(wrapper);
 
         LOG.info("Patched " + LIBRARY + "#canConnectFluid to also visually connect to foreign IFluidHandler neighbors");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // com.hbm.inventory.fluid.tank.FluidTank#setType
+    // ------------------------------------------------------------------
+
+    private byte[] patchFluidTank(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+        boolean changed = false;
+
+        // --- setType(int, int, ItemStack[]) - reset-identifier slot behavior (existing) ---
+        MethodNode setType = findMethod(cn, "setType", SET_TYPE_DESC);
+        if (setType != null && findMethod(cn, "setType$hbm", SET_TYPE_DESC) == null) {
+            setType.name = "setType$hbm";
+
+            MethodNode wrapper = new MethodNode(Opcodes.ACC_PUBLIC, "setType", SET_TYPE_DESC, null, null);
+            InsnList il = new InsnList();
+            LabelNode checkInPlace = new LabelNode();
+            LabelNode proceed = new LabelNode();
+
+            il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            il.add(new VarInsnNode(Opcodes.ILOAD, 1));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "shouldBlockReset", SHOULD_BLOCK_RESET_DESC, false));
+            il.add(new JumpInsnNode(Opcodes.IFEQ, checkInPlace));
+            il.add(new InsnNode(Opcodes.ICONST_0));
+            il.add(new InsnNode(Opcodes.IRETURN));
+
+            il.add(checkInPlace);
+            il.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            il.add(new VarInsnNode(Opcodes.ILOAD, 1));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "isInPlaceReset", SHOULD_BLOCK_RESET_DESC, false));
+            il.add(new JumpInsnNode(Opcodes.IFEQ, proceed));
+            il.add(new InsnNode(Opcodes.ICONST_1));
+            il.add(new InsnNode(Opcodes.IRETURN));
+
+            il.add(proceed);
+            il.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            il.add(new VarInsnNode(Opcodes.ILOAD, 1));
+            il.add(new VarInsnNode(Opcodes.ILOAD, 2));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 3));
+            il.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FLUID_TANK, "setType$hbm", SET_TYPE_DESC, false));
+            il.add(new InsnNode(Opcodes.IRETURN));
+
+            wrapper.instructions = il;
+            cn.methods.add(wrapper);
+            changed = true;
+        }
+
+        // --- setTankType(FluidType) - universal guard: never collapse a full tank to NONE ---
+        MethodNode setTankType = findMethod(cn, "setTankType", SET_TANK_TYPE_DESC);
+        if (setTankType != null && findMethod(cn, "setTankType$hbm", SET_TANK_TYPE_DESC) == null) {
+            setTankType.name = "setTankType$hbm";
+
+            MethodNode wrapper = new MethodNode(Opcodes.ACC_PUBLIC, "setTankType", SET_TANK_TYPE_DESC, null, null);
+            InsnList il = new InsnList();
+            LabelNode proceed = new LabelNode();
+
+            il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "shouldBlockTypeChange", SHOULD_BLOCK_TYPE_CHANGE_DESC, false));
+            il.add(new JumpInsnNode(Opcodes.IFEQ, proceed));
+            il.add(new InsnNode(Opcodes.RETURN));
+
+            il.add(proceed);
+            il.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+            il.add(new VarInsnNode(Opcodes.ALOAD, 1));
+            il.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, FLUID_TANK, "setTankType$hbm", SET_TANK_TYPE_DESC, false));
+            il.add(new InsnNode(Opcodes.RETURN));
+
+            wrapper.instructions = il;
+            cn.methods.add(wrapper);
+            changed = true;
+        }
+
+        if (!changed) return basicClass;
+
+        LOG.info("Patched " + FLUID_TANK + ": reset-identifier slot behavior + universal setTankType(NONE) guard");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // com.hbm.tileentity.machine.TileEntityMachineCompressorBase#setupTanks
+    // ------------------------------------------------------------------
+
+    private byte[] patchCompressorBase(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+
+        MethodNode original = findMethod(cn, "setupTanks", SETUP_TANKS_DESC);
+        if (original == null) {
+            LOG.warning(COMPRESSOR_BASE + "#setupTanks" + SETUP_TANKS_DESC + " not found - skipping the "
+                    + "compressor output-protection patch.");
+            return basicClass;
+        }
+
+        String renamed = "setupTanks$hbm";
+        if (findMethod(cn, renamed, SETUP_TANKS_DESC) != null) return basicClass;
+
+        original.name = renamed;
+
+        MethodNode wrapper = new MethodNode(Opcodes.ACC_PROTECTED, "setupTanks", SETUP_TANKS_DESC, null, null);
+        InsnList il = new InsnList();
+        LabelNode proceed = new LabelNode();
+
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new MethodInsnNode(Opcodes.INVOKESTATIC, BRIDGE, "shouldSkipCompressorSync", SHOULD_SKIP_COMPRESSOR_DESC, false));
+        il.add(new JumpInsnNode(Opcodes.IFEQ, proceed));
+        il.add(new InsnNode(Opcodes.RETURN));
+
+        il.add(proceed);
+        il.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+        il.add(new VarInsnNode(Opcodes.ALOAD, 0));
+        il.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, COMPRESSOR_BASE, renamed, SETUP_TANKS_DESC, false));
+        il.add(new InsnNode(Opcodes.RETURN));
+
+        wrapper.instructions = il;
+        cn.methods.add(wrapper);
+
+        LOG.info("Patched " + COMPRESSOR_BASE + "#setupTanks to skip the no-recipe sync while the output tank still holds fluid");
         return writeClass(cn);
     }
 

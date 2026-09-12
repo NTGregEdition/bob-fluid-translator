@@ -7,6 +7,7 @@ import com.ezzo.fluidtranslator.item.UniversalTankItemBlock;
 import com.ezzo.fluidtranslator.network.ModNetwork;
 import com.ezzo.fluidtranslator.tileentity.TileEntityHBMAdapter;
 import com.ezzo.fluidtranslator.tileentity.TileEntityUniversalTank;
+import com.ezzo.fluidtranslator.item.ItemFluidIdentifierReset;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
 import com.hbm.items.ModItems;
@@ -20,6 +21,7 @@ import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.registry.GameRegistry;
 import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
+import net.minecraft.item.Item;
 import net.minecraftforge.common.config.Configuration;
 import net.minecraftforge.fluids.FluidRegistry;
 import org.apache.logging.log4j.LogManager;
@@ -42,6 +44,7 @@ public class FluidTranslator
     public static FluidTranslator instance;
 
     public static Logger logger = LogManager.getLogger(MODID);
+    public static Item fluidIdentifierReset;
 
     @EventHandler
     public void preInit(FMLPreInitializationEvent event)
@@ -75,6 +78,9 @@ public class FluidTranslator
 
         GameRegistry.registerTileEntity(TileEntityUniversalTank.class, "teUniversalTank");
         GameRegistry.registerTileEntity(TileEntityHBMAdapter.class, "teNTMAdapter");
+
+        fluidIdentifierReset = new ItemFluidIdentifierReset().setUnlocalizedName("fluid_identifier_reset").setTextureName(MODID + ":fluid_identifier_reset");
+        GameRegistry.registerItem(fluidIdentifierReset, "fluid_identifier_reset");
     }
 
     @EventHandler

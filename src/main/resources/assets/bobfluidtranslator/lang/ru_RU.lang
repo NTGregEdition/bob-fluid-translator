@@ -1,0 +1,4 @@
+tile.universalFluidTank.name=Универсальный жидкостный резервуар (LEGACY)
+tile.ntmAdapter.name=НТМ Жидкостный адаптер (LEGACY)
+item.fluid_identifier_reset.name=Fluid Identifier Reset
+item.fluid_identifier_reset.info=Сбрасывает тип жидкости в резервуаре на пусто. Действие невозможно, если в резервуаре ещё есть жидкость.
