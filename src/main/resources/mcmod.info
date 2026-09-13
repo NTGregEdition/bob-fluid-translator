@@ -5,7 +5,7 @@
   "description": "This mod is a bridge between NTM's fluid system and Forge's fluid system: it aims to make these two compatible.",
   "version": "${version}",
   "mcversion": "${mcversion}",
-  "url": "https://github.com/Ezzocorbi/bob-fluid-translator",
+  "url": "https://github.com/NTGregEdition/bob-fluid-translator",
   "updateUrl": "",
   "authorList": ["Ezzocorbi, Arystan_X"],
   "credits": "",

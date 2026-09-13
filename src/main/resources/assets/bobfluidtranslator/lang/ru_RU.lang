@@ -1,4 +1,12 @@
 tile.universalFluidTank.name=Универсальный жидкостный резервуар (LEGACY)
 tile.ntmAdapter.name=НТМ Жидкостный адаптер (LEGACY)
-item.fluid_identifier_reset.name=Жидкостный идентификатор ресет
+tooltip.hold_shift=Удерживайте SHIFT
+tooltip.ntm_bridge.desc1=Связывает машины НТМ с жидкостями Forge.
+tooltip.ntm_bridge.desc2=Подключается к машине из НТМ и имитирует один
+tooltip.ntm_bridge.desc3=из её внутренних резервуаров. Работает только с жидкостями НТМ.
+tooltip.universal_tank.capacity=%d mb
+tooltip.universal_tank.desc1=Может хранить жидкости из НТМ и конвертировать их в жидкости Forge.
+tooltip.universal_tank.desc2=Работает как резервуар Forge и подключается к сети жидкостей NTM.
+tooltip.universal_tank.desc3=Принимает только жидкости НТМ.
+item.fluid_identifier_reset.name=Жидкостный идентификатор сброса
 item.fluid_identifier_reset.info=Сбрасывает тип жидкости в резервуаре на пусто. Действие невозможно, если в резервуаре ещё есть жидкость.

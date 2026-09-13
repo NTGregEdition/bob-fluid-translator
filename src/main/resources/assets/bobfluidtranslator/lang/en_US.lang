@@ -1,4 +1,12 @@
 tile.universalFluidTank.name=Universal Fluid Tank (LEGACY)
 tile.ntmAdapter.name=NTM Fluid Adapter (LEGACY)
+tooltip.hold_shift=Hold SHIFT
+tooltip.ntm_bridge.desc1=Bridges NTM machines to Forge fluids.
+tooltip.ntm_bridge.desc2=Connects to a machine from NTM and emulates one
+tooltip.ntm_bridge.desc3=of its internal tanks. Only works with NTM fluids.
+tooltip.universal_tank.capacity=%d mb
+tooltip.universal_tank.desc1=Can store fluids from NTM and convert them to Forge fluids.
+tooltip.universal_tank.desc2=Acts as a Forge tank and connects to NTM's fluid network.
+tooltip.universal_tank.desc3=Only accepts NTM fluids.
 item.fluid_identifier_reset.name=Fluid Identifier Reset
 item.fluid_identifier_reset.info=Resets a tank's fluid type to None. Refuses if the tank still has fluid in it.

@@ -8,6 +8,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.StatCollector;
 
 import java.util.List;
 
@@ -20,13 +21,14 @@ public class HBMAdapterItemBlock extends ItemBlock {
     @Override
     @SideOnly(Side.CLIENT)
     public void addInformation(ItemStack stack, EntityPlayer player, List list, boolean advanced) {
-        list.add(EnumChatFormatting.YELLOW + "" + EnumChatFormatting.ITALIC + "Hold SHIFT");
+        list.add(EnumChatFormatting.YELLOW + "" + EnumChatFormatting.ITALIC + StatCollector.translateToLocal("tooltip.hold_shift"));
 
         if (GuiScreen.isShiftKeyDown()) {
             String formatting = EnumChatFormatting.GRAY + "" + EnumChatFormatting.ITALIC;
-            list.add(formatting + "Bridges NTM machines to Forge fluids.");
-            list.add(formatting + "Connects to a machine from NTM and emulates one");
-            list.add(formatting + "of its internal tanks. Only works with NTM fluids.");
+
+            list.add(formatting + StatCollector.translateToLocal("tooltip.ntm_bridge.desc1"));
+            list.add(formatting + StatCollector.translateToLocal("tooltip.ntm_bridge.desc2"));
+            list.add(formatting + StatCollector.translateToLocal("tooltip.ntm_bridge.desc3"));
         }
     }
 }

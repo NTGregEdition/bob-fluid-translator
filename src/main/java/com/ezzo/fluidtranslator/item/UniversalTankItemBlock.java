@@ -9,6 +9,7 @@ import net.minecraft.entity.player.EntityPlayer;
 import net.minecraft.item.ItemBlock;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.EnumChatFormatting;
+import net.minecraft.util.StatCollector;
 
 import java.util.List;
 
@@ -21,14 +22,17 @@ public class UniversalTankItemBlock extends ItemBlock {
     @Override
     @SideOnly(Side.CLIENT)
     public void addInformation(ItemStack stack, EntityPlayer player, List list, boolean advanced) {
-        list.add(((BlockUniversalTank)field_150939_a).getCapacity() + "mb");
-        list.add(EnumChatFormatting.YELLOW + "" + EnumChatFormatting.ITALIC + "Hold SHIFT");
+        int capacity = ((BlockUniversalTank) field_150939_a).getCapacity();
+        list.add(StatCollector.translateToLocalFormatted("tooltip.universal_tank.capacity", capacity));
+
+        list.add(EnumChatFormatting.YELLOW + "" + EnumChatFormatting.ITALIC + StatCollector.translateToLocal("tooltip.hold_shift"));
 
         if (GuiScreen.isShiftKeyDown()) {
             String formatting = EnumChatFormatting.GRAY + "" + EnumChatFormatting.ITALIC;
-            list.add(formatting + "Can store fluids from NTM and convert them to Forge fluids.");
-            list.add(formatting + "Acts as a Forge tank and connects to NTM's fluid network.");
-            list.add(formatting + "Only accepts NTM fluids.");
+
+            list.add(formatting + StatCollector.translateToLocal("tooltip.universal_tank.desc1"));
+            list.add(formatting + StatCollector.translateToLocal("tooltip.universal_tank.desc2"));
+            list.add(formatting + StatCollector.translateToLocal("tooltip.universal_tank.desc3"));
         }
     }
 }
