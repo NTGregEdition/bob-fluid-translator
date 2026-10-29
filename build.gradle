@@ -21,7 +21,7 @@ buildscript {
 
 apply plugin: 'forge'
 
-version = "2.1.12-NTGE"
+version = "2.1.13-NTGE"
 group= "com.ezzo.bobfluidtranslator" // http://maven.apache.org/guides/mini/guide-naming-conventions.html
 archivesBaseName = "bobfluidtranslator"
 
@@ -58,8 +58,8 @@ dependencies {
     // or you may define them like so..
     //compile "some.group:artifact:version:classifier"
     //compile "some.group:artifact:version"
-    compile files("libs/HBM-NTM-.1.0.27_X5808.jar")
-    compileOnly files("libs/HBM-NTM-.1.0.27_X5808-sources.jar")
+    compile files("libs/HBM-NTM-.1.0.27_X5852_H261.jar")
+    compileOnly files("libs/HBM-NTM-.1.0.27_X5852_H261-sources.jar")
 
     implementation "li.cil.oc:OpenComputers:MC1.7.10-1.5.+:api"
 

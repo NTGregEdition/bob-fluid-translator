@@ -1,6 +1,5 @@
 package com.ezzo.fluidtranslator.asm;
 
-import api.hbm.fluid.IFluidStandardTransceiver;
 import api.hbm.fluidmk2.FluidNetMK2;
 import api.hbm.fluidmk2.IFluidConnectorMK2;
 import api.hbm.fluidmk2.IFluidProviderMK2;
@@ -35,9 +34,12 @@ import net.minecraftforge.fluids.IFluidHandler;
 import net.minecraft.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class UniversalFluidBridge {
 
@@ -202,76 +204,6 @@ public final class UniversalFluidBridge {
             return tankInfo(self.getAllTanks());
         } catch (Throwable t) {
             logError("transceiverTankInfo", self, t);
-            return emptyInfo();
-        }
-    }
-
-    // ======================================================================
-    // api.hbm.fluid.IFluidStandardTransceiver (deprecated legacy interface)
-    // ======================================================================
-
-    @SuppressWarnings("deprecation")
-    public static int legacyTransceiverFill(IFluidStandardTransceiver self, ForgeDirection from, FluidStack resource, boolean doFill) {
-        if (!ModConfig.enableUniversalFluidPorts) return 0;
-        try {
-            return fillTanks(self.getReceivingTanks(), resource, doFill);
-        } catch (Throwable t) {
-            logError("legacyTransceiverFill", self, t);
-            return 0;
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    public static FluidStack legacyTransceiverDrain(IFluidStandardTransceiver self, ForgeDirection from, FluidStack resource, boolean doDrain) {
-        if (!ModConfig.enableUniversalFluidPorts) return null;
-        try {
-            return drainTanksByType(self.getSendingTanks(), resource, doDrain);
-        } catch (Throwable t) {
-            logError("legacyTransceiverDrain", self, t);
-            return null;
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    public static FluidStack legacyTransceiverDrainAmount(IFluidStandardTransceiver self, ForgeDirection from, int maxDrain, boolean doDrain) {
-        if (!ModConfig.enableUniversalFluidPorts) return null;
-        try {
-            return drainTanksAny(self.getSendingTanks(), maxDrain, doDrain);
-        } catch (Throwable t) {
-            logError("legacyTransceiverDrainAmount", self, t);
-            return null;
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    public static boolean legacyTransceiverCanFill(IFluidStandardTransceiver self, ForgeDirection from, Fluid fluid) {
-        if (!ModConfig.enableUniversalFluidPorts) return false;
-        try {
-            return canFillTanks(self.getReceivingTanks(), fluid);
-        } catch (Throwable t) {
-            logError("legacyTransceiverCanFill", self, t);
-            return false;
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    public static boolean legacyTransceiverCanDrain(IFluidStandardTransceiver self, ForgeDirection from, Fluid fluid) {
-        if (!ModConfig.enableUniversalFluidPorts) return false;
-        try {
-            return canDrainTanks(self.getSendingTanks(), fluid);
-        } catch (Throwable t) {
-            logError("legacyTransceiverCanDrain", self, t);
-            return false;
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    public static FluidTankInfo[] legacyTransceiverTankInfo(IFluidStandardTransceiver self, ForgeDirection from) {
-        if (!ModConfig.enableUniversalFluidPorts) return emptyInfo();
-        try {
-            return tankInfo(self.getAllTanks());
-        } catch (Throwable t) {
-            logError("legacyTransceiverTankInfo", self, t);
             return emptyInfo();
         }
     }
@@ -556,7 +488,7 @@ public final class UniversalFluidBridge {
                 self.useUpFluid(type, pressure, accepted);
             }
         } catch (Throwable t) {
-            FluidTranslator.logger.error("UniversalFluidBridge: error auto-pushing fluid into a foreign IFluidHandler at "
+            logErrorOnce("tryProvideToForge", "UniversalFluidBridge: error auto-pushing fluid into a foreign IFluidHandler at "
                     + x + "," + y + "," + z, t);
         }
     }
@@ -665,7 +597,7 @@ public final class UniversalFluidBridge {
                         + ") but no foreign IFluidHandler neighbors found on any of the 6 sides this tick.");
             }
         } catch (Throwable t) {
-            FluidTranslator.logger.error("UniversalFluidBridge: error discovering foreign fluid neighbors for the pipe at "
+            logErrorOnce("pipeDiscoverForeignNeighbors", "UniversalFluidBridge: error discovering foreign fluid neighbors for the pipe at "
                     + self.xCoord + "," + self.yCoord + "," + self.zCoord, t);
         }
     }
@@ -691,7 +623,7 @@ public final class UniversalFluidBridge {
 
         if (!doTransfer) {
             long demand = 0;
-            for (IFluidReceiverMK2 receiver : net.receiverEntries.keySet()) {
+            for (IFluidReceiverMK2 receiver : net.receiverEntries) {
                 demand += Math.max(0, receiver.getDemand(type, 0));
                 if (demand >= amount) return amount;
             }
@@ -699,7 +631,7 @@ public final class UniversalFluidBridge {
         }
 
         long remaining = amount;
-        for (IFluidReceiverMK2 receiver : net.receiverEntries.keySet()) {
+        for (IFluidReceiverMK2 receiver : net.receiverEntries) {
             if (remaining <= 0) break;
             remaining = receiver.transferFluid(type, 0, remaining); // leftover not accepted, per the MK2 contract
         }
@@ -712,7 +644,7 @@ public final class UniversalFluidBridge {
 
         if (!doTransfer) {
             long available = 0;
-            for (IFluidProviderMK2 provider : net.providerEntries.keySet()) {
+            for (IFluidProviderMK2 provider : net.providerEntries) {
                 available += Math.max(0, provider.getFluidAvailable(type, 0));
                 if (available >= amount) return amount;
             }
@@ -720,7 +652,7 @@ public final class UniversalFluidBridge {
         }
 
         long remaining = amount;
-        for (IFluidProviderMK2 provider : net.providerEntries.keySet()) {
+        for (IFluidProviderMK2 provider : net.providerEntries) {
             if (remaining <= 0) break;
             long take = Math.min(remaining, Math.max(0, provider.getFluidAvailable(type, 0)));
             if (take <= 0) continue;
@@ -918,7 +850,7 @@ public final class UniversalFluidBridge {
                 }
             }
         } catch (Throwable t) {
-            FluidTranslator.logger.error("UniversalFluidBridge: error discovering foreign fluid neighbors for the exhaust duct at "
+            logErrorOnce("exhaustDiscoverForeignNeighbors", "UniversalFluidBridge: error discovering foreign fluid neighbors for the exhaust duct at "
                     + self.xCoord + "," + self.yCoord + "," + self.zCoord, t);
         }
     }
@@ -1293,8 +1225,16 @@ public final class UniversalFluidBridge {
         return new FluidTankInfo[]{new FluidTankInfo(null, 0)};
     }
 
+    private static final Set<String> LOGGED_ERRORS = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
+
     private static void logError(String method, Object self, Throwable t) {
-        FluidTranslator.logger.error("UniversalFluidBridge#" + method + " failed for "
-                + (self == null ? "null" : self.getClass().getName()), t);
+        String owner = self == null ? "null" : self.getClass().getName();
+        logErrorOnce(method + ' ' + owner, "UniversalFluidBridge#" + method + " failed for " + owner, t);
+    }
+
+    private static void logErrorOnce(String site, String message, Throwable t) {
+        if (LOGGED_ERRORS.add(site + '|' + t.getClass().getName() + '|' + t.getMessage())) {
+            FluidTranslator.logger.error(message + " (identical repeats are suppressed)", t);
+        }
     }
 }

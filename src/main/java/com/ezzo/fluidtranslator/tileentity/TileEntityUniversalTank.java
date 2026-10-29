@@ -1,7 +1,10 @@
 package com.ezzo.fluidtranslator.tileentity;
 
 import api.hbm.fluidmk2.FluidNode;
+import api.hbm.fluidmk2.IFluidConnectorMK2;
+import api.hbm.fluidmk2.IFluidReceiverMK2;
 import api.hbm.fluidmk2.IFluidStandardTransceiverMK2;
+import api.hbm.tile.ILoadedTile.TileAccessCache;
 import com.ezzo.fluidtranslator.ModFluidRegistry;
 import com.ezzo.fluidtranslator.TankModes;
 import com.ezzo.fluidtranslator.adapter.UnifiedFluid;
@@ -25,6 +28,7 @@ import net.minecraft.nbt.NBTTagCompound;
 import net.minecraft.network.NetworkManager;
 import net.minecraft.network.Packet;
 import net.minecraft.network.play.server.S35PacketUpdateTileEntity;
+import net.minecraft.tileentity.TileEntity;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.*;
 
@@ -208,7 +212,7 @@ public class TileEntityUniversalTank extends TileEntityLoadedBase implements IIn
                     FluidNode dirNode = (FluidNode) UniNodespace.getNode(worldObj, pos.getX(), pos.getY(), pos.getZ(), tank.toHBM().getTankType().getNetworkProvider());
 
                     if(mode == TankModes.SENDER.ordinal) {
-                        tryProvide(tank.toHBM(), worldObj, pos.getX(), pos.getY(), pos.getZ(), pos.getDir());
+                        tryProvide(tank.toHBM(), dirNode, pos);
                     } else {
                         if(dirNode != null && dirNode.hasValidNet()) dirNode.net.removeProvider(this);
                     }
@@ -222,6 +226,30 @@ public class TileEntityUniversalTank extends TileEntityLoadedBase implements IIn
             }
             this.networkPackNT(50);
         }
+    }
+
+    private void tryProvide(FluidTank sending, FluidNode dirNode, DirPos pos) {
+        FluidType type = sending.getTankType();
+        int pressure = sending.getPressure();
+        ForgeDirection fromNeighbor = pos.getDir().getOpposite();
+        TileEntity te = TileAccessCache.getTileOrCache(worldObj, pos.getX(), pos.getY(), pos.getZ());
+
+        if (te instanceof IFluidConnectorMK2 && ((IFluidConnectorMK2) te).canConnect(type, fromNeighbor)
+                && dirNode != null && dirNode.hasValidNet()) {
+            dirNode.net.addProvider(this);
+        }
+
+        if (te == this || !(te instanceof IFluidReceiverMK2)) return;
+        IFluidReceiverMK2 receiver = (IFluidReceiverMK2) te;
+        if (!receiver.canConnect(type, fromNeighbor)) return;
+
+        long provides = Math.min(getFluidAvailable(type, pressure), getProviderSpeed(type, pressure));
+        long receives = Math.min(receiver.getDemand(type, pressure), receiver.getReceiverSpeed(type, pressure));
+        long toTransfer = Math.min(provides, receives);
+        if (toTransfer <= 0) return;
+
+        toTransfer -= receiver.transferFluid(type, pressure, toTransfer);
+        useUpFluid(type, pressure, toTransfer);
     }
 
     protected FluidNode createNode(FluidType type) {

@@ -33,8 +33,6 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private static final String EXHAUST_PIPE = "com/hbm/tileentity/network/TileEntityPipeExhaust";
     private static final String LIBRARY = "com/hbm/lib/Library";
 
-    private static final String LEGACY_TRANSCEIVER = "api/hbm/fluid/IFluidStandardTransceiver";
-
     private static final String TICK_DEOBF = "updateEntity";
     private static final String TICK_SRG = "func_145845_h";
 
@@ -77,9 +75,6 @@ public class UniversalFluidTransformer implements IClassTransformer {
             }
             if (transformedName.equals("api.hbm.fluidmk2.IFluidStandardTransceiverMK2")) {
                 return patchTransceiver(basicClass);
-            }
-            if (transformedName.equals("api.hbm.fluid.IFluidStandardTransceiver")) {
-                return patchLegacyTransceiver(basicClass);
             }
             if (transformedName.equals("api.hbm.fluidmk2.IFluidReceiverMK2")) {
                 return patchBaseReceiver(basicClass);
@@ -250,34 +245,6 @@ public class UniversalFluidTransformer implements IClassTransformer {
                 "transceiverTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
 
         LOG.info("Patched " + TRANSCEIVER + " with a universal Forge IFluidHandler bridge");
-        return writeClass(cn);
-    }
-
-    // ------------------------------------------------------------------
-    // api.hbm.fluid.IFluidStandardTransceiver (deprecated legacy interface)
-    // ------------------------------------------------------------------
-
-    private byte[] patchLegacyTransceiver(byte[] basicClass) {
-        ClassNode cn = readClass(basicClass);
-        if (cn.interfaces.contains(FLUID_HANDLER)) return basicClass; // already patched
-
-        addInterface(cn, FLUID_HANDLER);
-
-        String self = "L" + LEGACY_TRANSCEIVER + ";";
-        addTrampoline(cn, "fill", "(" + DIR + STACK + "Z)I",
-                "legacyTransceiverFill", "(" + self + DIR + STACK + "Z)I");
-        addTrampoline(cn, "drain", "(" + DIR + STACK + "Z)" + STACK,
-                "legacyTransceiverDrain", "(" + self + DIR + STACK + "Z)" + STACK);
-        addTrampoline(cn, "drain", "(" + DIR + "IZ)" + STACK,
-                "legacyTransceiverDrainAmount", "(" + self + DIR + "IZ)" + STACK);
-        addTrampoline(cn, "canFill", "(" + DIR + FLUID + ")Z",
-                "legacyTransceiverCanFill", "(" + self + DIR + FLUID + ")Z");
-        addTrampoline(cn, "canDrain", "(" + DIR + FLUID + ")Z",
-                "legacyTransceiverCanDrain", "(" + self + DIR + FLUID + ")Z");
-        addTrampoline(cn, "getTankInfo", "(" + DIR + ")" + TANKINFO_ARR,
-                "legacyTransceiverTankInfo", "(" + self + DIR + ")" + TANKINFO_ARR);
-
-        LOG.info("Patched " + LEGACY_TRANSCEIVER + " with a universal Forge IFluidHandler bridge");
         return writeClass(cn);
     }
 
