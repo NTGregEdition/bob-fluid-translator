@@ -281,7 +281,9 @@ public class TileEntityUniversalTank extends TileEntityLoadedBase implements IIn
 
         if (operationDelay <= 0) {
             if (worldObj.isRemote) return;
-            if (FluidContainerRegistry.isBucket(stackIn)) {
+            if (stackIn.getItem() instanceof IItemFluidIdentifier) {
+                handleFluidIdentifier(stackIn);
+            } else if (FluidContainerRegistry.isBucket(stackIn)) {
                 handleBuckets(stackIn);
             } else if (stackIn.getItem() instanceof IFluidContainerItem) {
                 handleFluidContainer(stackIn);
@@ -290,8 +292,6 @@ public class TileEntityUniversalTank extends TileEntityLoadedBase implements IIn
             } else if (com.hbm.inventory.FluidContainerRegistry.getFullContainer(stackIn, tank.toHBM().getTankType()) != null) {
                 // Case of an empty container from HBM
                 handleEmptyHBMTank(stackIn);
-            } else if (stackIn.getItem() instanceof IItemFluidIdentifier) {
-                handleFluidIdentifier(stackIn);
             }
         } else {
             operationDelay--;

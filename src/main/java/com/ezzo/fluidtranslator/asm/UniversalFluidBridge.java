@@ -14,6 +14,7 @@ import com.ezzo.fluidtranslator.item.ItemFluidIdentifierReset;
 import com.hbm.inventory.fluid.FluidType;
 import com.hbm.inventory.fluid.Fluids;
 import com.hbm.inventory.fluid.tank.FluidTank;
+import com.hbm.items.machine.IItemFluidIdentifier;
 import com.hbm.tileentity.TileEntityProxyBase;
 import com.hbm.tileentity.network.TileEntityPipeBaseNT;
 import com.hbm.tileentity.network.TileEntityPipeExhaust;
@@ -23,11 +24,13 @@ import com.hbm.inventory.recipes.CompressorRecipes;
 import com.hbm.inventory.recipes.CompressorRecipes.CompressorRecipe;
 import com.hbm.tileentity.machine.TileEntityMachineCompressorBase;
 import com.hbm.util.Tuple.Pair;
+import net.minecraft.item.Item;
 import net.minecraft.tileentity.TileEntity;
 import net.minecraft.world.IBlockAccess;
 import net.minecraft.world.World;
 import net.minecraftforge.common.util.ForgeDirection;
 import net.minecraftforge.fluids.Fluid;
+import net.minecraftforge.fluids.FluidContainerRegistry;
 import net.minecraftforge.fluids.FluidStack;
 import net.minecraftforge.fluids.FluidTankInfo;
 import net.minecraftforge.fluids.IFluidHandler;
@@ -1079,6 +1082,39 @@ public final class UniversalFluidBridge {
             logError("shouldBlockTypeChange", tank, t);
             return false;
         }
+    }
+
+    // ======================================================================
+    // ItemFluidIDMulti -> read-only IFluidContainerItem
+    // ======================================================================
+
+    // fill/drain stay inert on purpose: if they moved fluid, a cheap identifier would be a free fluid source
+    public static FluidStack identifierGetFluid(Item self, ItemStack stack) {
+        if (!ModConfig.enableHBMContainerBridge || stack == null) return null;
+        try {
+            if (!(stack.getItem() instanceof IItemFluidIdentifier)) return null;
+
+            FluidType type = ((IItemFluidIdentifier) stack.getItem()).getType(null, 0, 0, 0, stack);
+            if (type == null || type.getID() == Fluids.NONE.getID()) return null;
+
+            Fluid fluid = ModFluidRegistry.getForgeFluid(type);
+            return fluid == null ? null : new FluidStack(fluid, FluidContainerRegistry.BUCKET_VOLUME);
+        } catch (Throwable t) {
+            logError("identifierGetFluid", self, t);
+            return null;
+        }
+    }
+
+    public static int identifierGetCapacity(Item self, ItemStack stack) {
+        return FluidContainerRegistry.BUCKET_VOLUME;
+    }
+
+    public static int identifierFill(Item self, ItemStack stack, FluidStack resource, boolean doFill) {
+        return 0;
+    }
+
+    public static FluidStack identifierDrain(Item self, ItemStack stack, int maxDrain, boolean doDrain) {
+        return null;
     }
 
     // ======================================================================

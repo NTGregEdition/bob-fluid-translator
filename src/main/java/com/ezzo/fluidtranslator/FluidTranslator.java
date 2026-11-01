@@ -19,13 +19,13 @@ import cpw.mods.fml.common.SidedProxy;
 import cpw.mods.fml.common.event.FMLInitializationEvent;
 import cpw.mods.fml.common.event.FMLPostInitializationEvent;
 import cpw.mods.fml.common.event.FMLPreInitializationEvent;
+import cpw.mods.fml.common.event.FMLServerStartingEvent;
 import cpw.mods.fml.common.network.NetworkRegistry;
 import cpw.mods.fml.common.registry.GameRegistry;
 import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Item;
 import net.minecraftforge.common.config.Configuration;
-import net.minecraftforge.fluids.FluidRegistry;
 import net.minecraftforge.oredict.ShapedOreRecipe;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -34,7 +34,7 @@ import org.apache.logging.log4j.Logger;
 public class FluidTranslator
 {
     public static final String MODID = "bobfluidtranslator";
-    public static final String VERSION = "2.1.13";
+    public static final String VERSION = "2.1.14";
 
     @SidedProxy(
             clientSide = "com.ezzo.fluidtranslator.ClientProxy",
@@ -62,13 +62,7 @@ public class FluidTranslator
         for(FluidType f : Fluids.getAll()) {
             if (ModFluidRegistry.isBlackListed(f)) continue;
 
-            // Don't register the forge fluid if it's already registered.
-            // This may be the case if a mapping was added manually.
-            if (ModFluidRegistry.getForgeFluid(f) != null) continue;
-
-            // Don't register the forge fluid if another mod already did it
-            // This doesn't always work because other mods might get loaded after this one
-            if (FluidRegistry.getFluid(f.getName().toLowerCase()) != null) continue;
+            if (!ModFluidRegistry.shouldRegister(f)) continue;
             ft.registerFluidType(f);
         }
         proxy.registerTanslations();
@@ -98,6 +92,12 @@ public class FluidTranslator
     public void postInit(FMLPostInitializationEvent event)
     {
         ModFluidRegistry.bridgeHBMContainersToForge();
+    }
+
+    @EventHandler
+    public void serverStarting(FMLServerStartingEvent event)
+    {
+        ModFluidRegistry.reapplyDefaults();
     }
 
     public void addRecipes() {

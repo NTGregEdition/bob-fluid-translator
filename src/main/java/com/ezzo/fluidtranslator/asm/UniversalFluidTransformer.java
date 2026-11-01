@@ -62,6 +62,10 @@ public class UniversalFluidTransformer implements IClassTransformer {
     private static final String FLUID_TYPE = "Lcom/hbm/inventory/fluid/FluidType;";
     private static final String SET_TANK_TYPE_DESC = "(" + FLUID_TYPE + ")V";
     private static final String SHOULD_BLOCK_TYPE_CHANGE_DESC = "(L" + FLUID_TANK + ";" + FLUID_TYPE + ")Z";
+
+    private static final String FLUID_CONTAINER_ITEM = "net/minecraftforge/fluids/IFluidContainerItem";
+    private static final String ITEM = "Lnet/minecraft/item/Item;";
+
     @Override
     public byte[] transform(String name, String transformedName, byte[] basicClass) {
         if (basicClass == null || transformedName == null) return basicClass;
@@ -93,6 +97,9 @@ public class UniversalFluidTransformer implements IClassTransformer {
             }
             if (transformedName.equals("com.hbm.lib.Library")) {
                 return patchLibrary(basicClass);
+            }
+            if (transformedName.equals("com.hbm.items.machine.ItemFluidIDMulti")) {
+                return patchFluidIdentifierMulti(basicClass);
             }
 
             if (transformedName.startsWith("com.hbm.tileentity.")) {
@@ -690,6 +697,29 @@ public class UniversalFluidTransformer implements IClassTransformer {
 
         LOG.info("Patched " + transformedName + " directly (implements a receiver-family and "
                 + "sender-family MK2 interface at once, needed its own diamond-resolving overrides)");
+        return writeClass(cn);
+    }
+
+    // ------------------------------------------------------------------
+    // com.hbm.items.machine.ItemFluidIDMulti
+    // ------------------------------------------------------------------
+
+    private byte[] patchFluidIdentifierMulti(byte[] basicClass) {
+        ClassNode cn = readClass(basicClass);
+        if (cn.interfaces.contains(FLUID_CONTAINER_ITEM)) return basicClass; // NTM forks already expose it read-only
+
+        addInterface(cn, FLUID_CONTAINER_ITEM);
+
+        addTrampoline(cn, "getFluid", "(" + ITEM_STACK + ")" + STACK,
+                "identifierGetFluid", "(" + ITEM + ITEM_STACK + ")" + STACK);
+        addTrampoline(cn, "getCapacity", "(" + ITEM_STACK + ")I",
+                "identifierGetCapacity", "(" + ITEM + ITEM_STACK + ")I");
+        addTrampoline(cn, "fill", "(" + ITEM_STACK + STACK + "Z)I",
+                "identifierFill", "(" + ITEM + ITEM_STACK + STACK + "Z)I");
+        addTrampoline(cn, "drain", "(" + ITEM_STACK + "IZ)" + STACK,
+                "identifierDrain", "(" + ITEM + ITEM_STACK + "IZ)" + STACK);
+
+        LOG.info("Patched com.hbm.items.machine.ItemFluidIDMulti as a read-only Forge IFluidContainerItem");
         return writeClass(cn);
     }
 

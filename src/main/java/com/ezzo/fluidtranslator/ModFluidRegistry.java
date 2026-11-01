@@ -12,6 +12,9 @@ import net.minecraft.block.material.Material;
 import net.minecraft.client.Minecraft;
 import net.minecraft.init.Items;
 import net.minecraft.item.ItemStack;
+import net.minecraft.nbt.NBTTagCompound;
+import net.minecraft.nbt.NBTTagList;
+import net.minecraft.nbt.NBTTagString;
 import net.minecraftforge.fluids.Fluid;
 import net.minecraftforge.fluids.FluidContainerRegistry;
 import net.minecraftforge.fluids.FluidRegistry;
@@ -42,6 +45,10 @@ import java.util.List;
  */
 public class ModFluidRegistry {
 
+    private static final String NTM_MODID = "hbm";
+
+    private static final List<Fluid> takenOver = new ArrayList<>();
+
     public ModFluidRegistry() {
 
     }
@@ -57,7 +64,7 @@ public class ModFluidRegistry {
                 fluidType.getName().toLowerCase() + ModConfig.suffix);
 
         Fluid forgeFluid = new Fluid(name);
-        FluidRegistry.registerFluid(forgeFluid);
+        if (!FluidRegistry.registerFluid(forgeFluid)) takeOver(forgeFluid);
 
         CustomFluidBlock block = new CustomFluidBlock(forgeFluid, Material.water, name);
         GameRegistry.registerBlock(block, CustomFluidItemBlock.class, name + "_block");
@@ -73,6 +80,41 @@ public class ModFluidRegistry {
         );
 
         return block;
+    }
+
+    public static boolean shouldRegister(FluidType fluidType) {
+        Fluid existing = getForgeFluid(fluidType);
+        if (existing == null) return true;
+        return !ModConfig.customMappings.containsKey(fluidType.getName()) && !isProtected(existing);
+    }
+
+    // World data restores the previous default on load, so this is re-run at server start
+    public static void reapplyDefaults() {
+        takenOver.forEach(ModFluidRegistry::makeDefault);
+    }
+
+    private static void takeOver(Fluid fluid) {
+        takenOver.add(fluid);
+        makeDefault(fluid);
+    }
+
+    private static boolean isProtected(Fluid fluid) {
+        return fluid == FluidRegistry.WATER || fluid == FluidRegistry.LAVA
+                || FluidRegistry.getDefaultFluidName(fluid).startsWith(NTM_MODID + ":");
+    }
+
+    private static void makeDefault(Fluid fluid) {
+        Fluid current = FluidRegistry.getFluid(fluid.getName());
+        if (current == fluid || isProtected(current)) return;
+
+        NBTTagList defaults = new NBTTagList();
+        defaults.appendTag(new NBTTagString(FluidRegistry.getDefaultFluidName(fluid)));
+        NBTTagCompound tag = new NBTTagCompound();
+        tag.setTag("DefaultFluidList", defaults);
+        FluidRegistry.loadFluidDefaults(tag);
+
+        FluidTranslator.logger.info("ModFluidRegistry: '" + fluid.getName()
+                + "' is now the default Forge fluid, replacing the one registered by another mod");
     }
 
     /**
@@ -189,18 +231,6 @@ public class ModFluidRegistry {
                     skipped++;
                     FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge fluid pack for " + type.getName(), t);
                 }
-            }
-
-            ItemStack fullId = new ItemStack(ModItems.fluid_identifier_multi, 1, type.getID());
-            try {
-                if (!FluidContainerRegistry.isFilledContainer(fullId)) {
-                    FluidContainerRegistry.registerFluidContainer(new FluidStack(forgeFluid, FluidContainerRegistry.BUCKET_VOLUME),
-                            fullId, new ItemStack(ModItems.fluid_identifier_multi, 1, 0));
-                    registered++;
-                } else skipped++;
-            } catch (Throwable t) {
-                skipped++;
-                FluidTranslator.logger.warn("ModFluidRegistry: couldn't bridge fluid identifier for " + type.getName(), t);
             }
 
             ItemStack fullIcon = new ItemStack(ModItems.fluid_icon, 1, type.getID());
